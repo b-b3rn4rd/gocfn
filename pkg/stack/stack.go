@@ -17,6 +17,20 @@ type StackEntry struct {
 	Err     error
 }
 
+type CreateStackEntry struct {
+	Record *cloudformation.CreateStackOutput
+	Err error
+}
+
+type RunStackParameters struct {
+	Parameters []*cloudformation.Parameter
+	Tags []*cloudformation.Tag
+	StackName *string
+	TemplateBody *string
+	TemplateURL *string
+	Capabilities []*string
+}
+
 func New(logger *logrus.Logger, svc cloudformation.CloudFormation) *Stack {
 	return &Stack{
 		logger:logger,
@@ -72,29 +86,50 @@ func (s *Stack) isStackExists(stackName string) (bool, error) {
 	return stackExists, nil
 }
 
-func (s *Stack) RunStack(stackName string) {
-	s.logger.WithField("stackName", stackName).Debug("Running stack")
+func (s *Stack) RunStack(runStackParameters RunStackParameters) {
+	s.logger.WithField("stackName", runStackParameters.StackName).Debug("Running stack")
 
-	exists, err := s.isStackExists(stackName)
+	exists, err := s.isStackExists(*runStackParameters.StackName)
 
 	if err != nil {
 
 	}
 
+	ch := make(chan *CreateStackEntry, 1)
 	if exists {
-		s.updateStack(stackName)
+		s.updateStack(runStackParameters)
 	} else {
-		s.createStack(stackName)
+		go s.createStack(runStackParameters, ch)
+
+		if resp := <-ch; resp.Err != nil {
+			s.logger.WithField("stackName", *runStackParameters.StackName).WithError(resp.Err).Fatal("AWS error while running CreateStack")
+		}
+	}
+}
+
+func (s *Stack) createStack(runStackParameters RunStackParameters, ch chan<- *CreateStackEntry) {
+	s.logger.WithField("stackName", runStackParameters.StackName).Debug("Creating new stack")
+	t := &cloudformation.CreateStackInput{}
+	fmt.Println(t.TemplateURL)
+	fmt.Println(runStackParameters.TemplateURL)
+	resp, err := s.svc.CreateStack(&cloudformation.CreateStackInput{
+		StackName: runStackParameters.StackName,
+		TemplateBody: runStackParameters.TemplateBody,
+		TemplateURL: runStackParameters.TemplateURL,
+		Parameters: runStackParameters.Parameters,
+		Tags: runStackParameters.Tags,
+	})
+
+	if err != nil {
+		ch <- &CreateStackEntry{Err:err}
+		return
 	}
 
+	s.logger.WithField("stackName", runStackParameters.StackName).Debug(resp)
+	ch <- &CreateStackEntry{Record: resp}
+
 }
 
-func (s *Stack) createStack(stackName string) {
-	s.svc.CreateStack(&cloudformation.CreateStackInput{
-		StackName: &stackName,
-	})
-}
-
-func (s *Stack) updateStack(stackName string) {
+func (s *Stack) updateStack(runStackParameters RunStackParameters) {
 
 }

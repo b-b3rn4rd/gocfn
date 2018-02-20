@@ -1,5 +1,10 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "BucketName": {
+            "Type": "String"
+        }
+    },
     "Resources": {
         "S3Bucket": {
             "Type": "AWS::S3::Bucket",
