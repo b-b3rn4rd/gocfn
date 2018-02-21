@@ -31,6 +31,40 @@ type RunStackParameters struct {
 	Capabilities []*string
 }
 
+func NewRunStackParameters (stackName *string,
+	parameters []*cloudformation.Parameter,
+	tags []*cloudformation.Tag,
+	templateBody *string,
+	templateURL *string,
+	capabilities []*string) *RunStackParameters {
+
+	runStackParameters := &RunStackParameters{
+		StackName: stackName,
+	}
+
+	if len(parameters) != 0 {
+		runStackParameters.Parameters = parameters
+	}
+
+	if len(tags) != 0 {
+		runStackParameters.Tags = tags
+	}
+
+	if *templateBody != "" {
+		runStackParameters.TemplateBody = templateBody
+	}
+
+	if *templateURL != "" {
+		runStackParameters.TemplateURL = templateURL
+	}
+
+	if len(capabilities) != 0 {
+		runStackParameters.Capabilities = capabilities
+	}
+
+	return runStackParameters
+}
+
 func New(logger *logrus.Logger, svc cloudformation.CloudFormation) *Stack {
 	return &Stack{
 		logger:logger,
@@ -86,7 +120,7 @@ func (s *Stack) isStackExists(stackName string) (bool, error) {
 	return stackExists, nil
 }
 
-func (s *Stack) RunStack(runStackParameters RunStackParameters) {
+func (s *Stack) RunStack(runStackParameters *RunStackParameters) {
 	s.logger.WithField("stackName", runStackParameters.StackName).Debug("Running stack")
 
 	exists, err := s.isStackExists(*runStackParameters.StackName)
@@ -107,11 +141,9 @@ func (s *Stack) RunStack(runStackParameters RunStackParameters) {
 	}
 }
 
-func (s *Stack) createStack(runStackParameters RunStackParameters, ch chan<- *CreateStackEntry) {
+func (s *Stack) createStack(runStackParameters *RunStackParameters, ch chan<- *CreateStackEntry) {
 	s.logger.WithField("stackName", runStackParameters.StackName).Debug("Creating new stack")
-	t := &cloudformation.CreateStackInput{}
-	fmt.Println(t.TemplateURL)
-	fmt.Println(runStackParameters.TemplateURL)
+
 	resp, err := s.svc.CreateStack(&cloudformation.CreateStackInput{
 		StackName: runStackParameters.StackName,
 		TemplateBody: runStackParameters.TemplateBody,
@@ -130,6 +162,6 @@ func (s *Stack) createStack(runStackParameters RunStackParameters, ch chan<- *Cr
 
 }
 
-func (s *Stack) updateStack(runStackParameters RunStackParameters) {
+func (s *Stack) updateStack(runStackParameters *RunStackParameters) {
 
 }

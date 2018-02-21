@@ -41,21 +41,20 @@ func main()  {
 
 	switch command {
 	case "run":
-		err := runCFNStack(*svc, stack.RunStackParameters{
-			StackName: stackName,
-			Parameters: ([]*cloudformation.Parameter)(*stackParameters),
-			Tags: ([]*cloudformation.Tag)(*stackTags),
-			TemplateBody:stackTemplateBody,
-			TemplateURL:stackTemplateUrl,
-
-		})
+		runStackParameters := stack.NewRunStackParameters(stackName,
+			([]*cloudformation.Parameter)(*stackParameters),
+			([]*cloudformation.Tag)(*stackTags),
+			stackTemplateBody,
+			stackTemplateUrl,
+			nil)
+		err := runCFNStack(*svc, runStackParameters)
 		if err != nil {
 			logger.WithError(err).Fatal("failed to process log data")
 		}
 	}
 }
 
-func runCFNStack(svc cloudformation.CloudFormation, runStackParameters stack.RunStackParameters) error {
+func runCFNStack(svc cloudformation.CloudFormation, runStackParameters *stack.RunStackParameters) error {
 	stack.New(logger, svc).RunStack(runStackParameters)
 	return nil
 }
