@@ -5,6 +5,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"strings"
 	"fmt"
+	"io/ioutil"
+	"github.com/aws/aws-sdk-go/aws"
 )
 
 type Stack struct {
@@ -19,6 +21,11 @@ type StackEntry struct {
 
 type CreateStackEntry struct {
 	Record *cloudformation.CreateStackOutput
+	Err error
+}
+
+type StackEventsEntry struct {
+	Records map[string]*cloudformation.StackEvent
 	Err error
 }
 
@@ -42,16 +49,21 @@ func NewRunStackParameters (stackName *string,
 		StackName: stackName,
 	}
 
+
 	if len(parameters) != 0 {
 		runStackParameters.Parameters = parameters
 	}
+
 
 	if len(tags) != 0 {
 		runStackParameters.Tags = tags
 	}
 
+
 	if *templateBody != "" {
-		runStackParameters.TemplateBody = templateBody
+		templateBodyBytes, _ := ioutil.ReadFile(*templateBody)
+		templateBody := string(templateBodyBytes)
+		runStackParameters.TemplateBody = &templateBody
 	}
 
 	if *templateURL != "" {
@@ -72,6 +84,26 @@ func New(logger *logrus.Logger, svc cloudformation.CloudFormation) *Stack {
 	}
 }
 
+func (s *Stack) describeStackEvents(stackName string, ch chan<- *StackEventsEntry) {
+	stackEvents := map[string]*cloudformation.StackEvent{}
+
+	err := s.svc.DescribeStackEventsPages(&cloudformation.DescribeStackEventsInput{
+		StackName: aws.String(stackName),
+	}, func(page *cloudformation.DescribeStackEventsOutput, isLastPage bool) bool {
+			for _, stackEvent := range page.StackEvents {
+				stackEvents[*stackEvent.EventId] = stackEvent
+			}
+		return !isLastPage
+	})
+
+	if err != nil {
+		ch <- &StackEventsEntry{Err:err}
+		return
+	}
+
+	ch <- &StackEventsEntry{Records:stackEvents}
+}
+
 func (s *Stack) describeStack(stackName string, ch chan<-  *StackEntry) {
 	resp, err := s.svc.DescribeStacks(&cloudformation.DescribeStacksInput{
 		StackName: &stackName,
@@ -82,7 +114,6 @@ func (s *Stack) describeStack(stackName string, ch chan<-  *StackEntry) {
 			ch <- &StackEntry{}
 			s.logger.WithField("stackName", stackName).Debug("Stack does not exist")
 		} else {
-			s.logger.WithError(err).Fatal("AWS error while running DescribeStack")
 			ch <- &StackEntry{Err: err}
 		}
 
@@ -126,19 +157,39 @@ func (s *Stack) RunStack(runStackParameters *RunStackParameters) {
 	exists, err := s.isStackExists(*runStackParameters.StackName)
 
 	if err != nil {
-
+		s.logger.WithError(err).Fatal("AWS error while running DescribeStack")
 	}
 
-	ch := make(chan *CreateStackEntry, 1)
 	if exists {
 		s.updateStack(runStackParameters)
 	} else {
+		ch := make(chan *CreateStackEntry, 1)
+
 		go s.createStack(runStackParameters, ch)
 
-		if resp := <-ch; resp.Err != nil {
-			s.logger.WithField("stackName", *runStackParameters.StackName).WithError(resp.Err).Fatal("AWS error while running CreateStack")
+		resp := <-ch
+		if resp.Err != nil {
+			s.logger.WithField("stackName", runStackParameters.StackName).WithError(resp.Err).Fatal("AWS error while running CreateStack")
+		}
+
+		if resp.Record != nil {
+			s.logger.WithField("stackName", runStackParameters.StackName).Info(
+				fmt.Sprintf("Stack creation has been initiated. %s", *resp.Record.StackId))
 		}
 	}
+}
+
+func (s *Stack) wait (stackName string) {
+	ch := make(chan *StackEventsEntry, 1)
+	go s.describeStackEvents(stackName, ch)
+
+	resp := <- ch
+
+	if resp.Err != nil {
+		s.logger.WithError(resp.Err).Fatal("AWS error while running DescribeStackEventsPages")
+	}
+
+	s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack has %d events", len(resp.Records)))
 }
 
 func (s *Stack) createStack(runStackParameters *RunStackParameters, ch chan<- *CreateStackEntry) {
@@ -157,7 +208,6 @@ func (s *Stack) createStack(runStackParameters *RunStackParameters, ch chan<- *C
 		return
 	}
 
-	s.logger.WithField("stackName", runStackParameters.StackName).Debug(resp)
 	ch <- &CreateStackEntry{Record: resp}
 
 }

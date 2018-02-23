@@ -14,12 +14,15 @@ var (
 	version = "master"
 	tracing = kingpin.Flag("trace", "Enable trace mode.").Short('t').Bool()
 	debug   = kingpin.Flag("debug", "Enable debug logging.").Short('d').Bool()
+	wait    = kingpin.Flag("wait", "Wait for stack completion.").Bool()
 	runCommand = kingpin.Command("run", "Create or update CloudFormation stack.")
 	stackName = runCommand.Arg("name", "The name that is associated with the stack.").String()
 	stackTemplateBody = runCommand.Flag("template-body", "Structure containing the template body." ).ExistingFile()
 	stackTemplateUrl = runCommand.Flag("template-url", "Location of file containing the template body." ).String()
 	stackParameters = cli.CFNParameters(runCommand.Flag("parameters", "A list of Parameter structures that specify input parameters for the stack."))
 	stackTags = cli.CFNTags(runCommand.Flag("tags", "Key-value pairs to associate with this stack."))
+	stackParametersFile = cli.CFNParameters(runCommand.Flag("parameters-file", "A list of Parameter structures that specify input parameters for the stack."))
+	stackTagsFile = cli.CFNTags(runCommand.Flag("tags-file", "Key-value pairs to associate with this stck."))
 	logger = logrus.New()
 )
 
@@ -41,13 +44,20 @@ func main()  {
 
 	switch command {
 	case "run":
-		runStackParameters := stack.NewRunStackParameters(stackName,
-			([]*cloudformation.Parameter)(*stackParameters),
-			([]*cloudformation.Tag)(*stackTags),
+		parameters := append(*stackParameters, *stackParametersFile...)
+		tags := append(*stackTags, *stackTagsFile...)
+
+		runStackParameters := stack.NewRunStackParameters(
+			stackName,
+			([]*cloudformation.Parameter)(parameters),
+			([]*cloudformation.Tag)(tags),
 			stackTemplateBody,
 			stackTemplateUrl,
-			nil)
+			[]*string{},
+		)
+
 		err := runCFNStack(*svc, runStackParameters)
+
 		if err != nil {
 			logger.WithError(err).Fatal("failed to process log data")
 		}
