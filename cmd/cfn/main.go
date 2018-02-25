@@ -16,6 +16,7 @@ var (
 	debug   = kingpin.Flag("debug", "Enable debug logging.").Short('d').Bool()
 	wait    = kingpin.Flag("wait", "Wait for stack completion.").Bool()
 	runCommand = kingpin.Command("run", "Create or update CloudFormation stack.")
+	stackForce = runCommand.Flag("force", "Force CloudFormation stack deployment if it's in CREATE_FAILED state.").Bool()
 	stackName = runCommand.Arg("name", "The name that is associated with the stack.").String()
 	stackTemplateBody = runCommand.Flag("template-body", "Structure containing the template body." ).ExistingFile()
 	stackTemplateUrl = runCommand.Flag("template-url", "Location of file containing the template body." ).String()
@@ -56,15 +57,15 @@ func main()  {
 			[]*string{},
 		)
 
-		err := runCFNStack(*svc, runStackParameters)
+		_, err := runCFNStack(*svc, runStackParameters, *wait, *stackForce)
 
 		if err != nil {
-			logger.WithError(err).Fatal("failed to process log data")
+			logger.WithError(err).Fatal("Error while deploying stack")
 		}
 	}
 }
 
-func runCFNStack(svc cloudformation.CloudFormation, runStackParameters *stack.RunStackParameters) error {
-	stack.New(logger, svc).RunStack(runStackParameters)
-	return nil
+func runCFNStack(svc cloudformation.CloudFormation, runStackParameters *stack.RunStackParameters, wait bool, force bool) (bool, error) {
+	return stack.New(logger, svc).RunStack(runStackParameters, wait, force)
+
 }

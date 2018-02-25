@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"github.com/aws/aws-sdk-go/aws"
+	"time"
+	"github.com/pkg/errors"
 )
 
 type Stack struct {
@@ -21,6 +23,11 @@ type StackEntry struct {
 
 type CreateStackEntry struct {
 	Record *cloudformation.CreateStackOutput
+	Err error
+}
+
+type UpdateStackEntry struct {
+	Record *cloudformation.UpdateStackOutput
 	Err error
 }
 
@@ -84,14 +91,20 @@ func New(logger *logrus.Logger, svc cloudformation.CloudFormation) *Stack {
 	}
 }
 
-func (s *Stack) describeStackEvents(stackName string, ch chan<- *StackEventsEntry) {
+func (s *Stack) describeStackEvents(stackName string, ch chan<- *StackEventsEntry, seenEvents map[string]*cloudformation.StackEvent) {
 	stackEvents := map[string]*cloudformation.StackEvent{}
 
 	err := s.svc.DescribeStackEventsPages(&cloudformation.DescribeStackEventsInput{
 		StackName: aws.String(stackName),
 	}, func(page *cloudformation.DescribeStackEventsOutput, isLastPage bool) bool {
 			for _, stackEvent := range page.StackEvents {
-				stackEvents[*stackEvent.EventId] = stackEvent
+				if len(seenEvents) == 0 {
+					stackEvents[*stackEvent.EventId] = stackEvent
+				} else {
+					if _, exists := seenEvents[*stackEvent.EventId]; !exists {
+						stackEvents[*stackEvent.EventId] = stackEvent
+					}
+				}
 			}
 		return !isLastPage
 	})
@@ -130,7 +143,7 @@ func (s *Stack) describeStack(stackName string, ch chan<-  *StackEntry) {
 	ch <- &StackEntry{Record: resp.Stacks[0]}
 }
 
-func (s *Stack) isStackExists(stackName string) (bool, error) {
+func (s *Stack) isStackExists(stackName string) (bool, error, *cloudformation.Stack) {
 
 	s.logger.WithField("stackName", stackName).Debug("Checking if stack exists")
 	stackExists := false
@@ -138,62 +151,221 @@ func (s *Stack) isStackExists(stackName string) (bool, error) {
 	ch := make(chan *StackEntry, 1)
 	go s.describeStack(stackName, ch)
 
-	stack := <- ch
+	resp := <- ch
 
-	if stack.Err != nil {
-		return false, stack.Err
+	if resp.Err != nil {
+		return false, resp.Err, nil
 	}
 
-	if stack.Record != nil {
+	if resp.Record != nil {
 		stackExists = true
 	}
 
-	return stackExists, nil
+	return stackExists, nil, resp.Record
 }
 
-func (s *Stack) RunStack(runStackParameters *RunStackParameters) {
-	s.logger.WithField("stackName", runStackParameters.StackName).Debug("Running stack")
+func (s *Stack) deleteStack(stackName string) (bool, error) {
 
-	exists, err := s.isStackExists(*runStackParameters.StackName)
+	_, err := s.svc.DeleteStack(&cloudformation.DeleteStackInput{
+		StackName:&stackName,
+	})
 
 	if err != nil {
-		s.logger.WithError(err).Fatal("AWS error while running DescribeStack")
+		return false, err
 	}
 
+	ticker := time.NewTicker(time.Second * 10)
+	timer := time.NewTimer(60 * time.Minute)
+	ch := make(chan *StackEntry, 1)
+
+	for {
+		select {
+			case res := <- ch:
+				if res.Err != nil {
+					return false, errors.Wrap(res.Err, "AWS error while running DescribeStack")
+				}
+
+				if res.Record == nil {
+					s.logger.WithField("stackName", stackName).Debug("Stack has been successfully deleted")
+					return true, nil
+				}
+
+				switch *res.Record.StackStatus {
+					case cloudformation.StackStatusDeleteInProgress:
+						s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack is in %s continue polling", *res.Record.StackStatus))
+					default:
+						if strings.HasSuffix(*res.Record.StackStatus, "_FAILED") {
+							return false, errors.New("AWS error while running DeleteStack")
+						}
+				}
+
+			case <-ticker.C:
+				go s.describeStack(stackName, ch)
+			case <-timer.C:
+				return false, errors.New("Timeout while polling stack deletion status")
+		}
+	}
+
+	return true, nil
+}
+
+func (s *Stack) RunStack(runStackParameters *RunStackParameters, wait bool, force bool) (bool, error){
+	s.logger.WithField("stackName", *runStackParameters.StackName).Debug("Running stack")
+
+	exists, err, stack := s.isStackExists(*runStackParameters.StackName)
+
+	if err != nil {
+		return false, errors.Wrap(err, "AWS error while running DescribeStack")
+	}
+
+	requireUpdate := false
+
 	if exists {
-		s.updateStack(runStackParameters)
+		if *stack.StackStatus == cloudformation.StackStatusCreateFailed ||
+			*stack.StackStatus == cloudformation.StackStatusRollbackComplete {
+			if force {
+				s.logger.WithField("stackName", *runStackParameters.StackName).Debug(fmt.Sprintf("Stack is in %s, and force is specified, deleting stack", *stack.StackStatus))
+				_, err := s.deleteStack(*runStackParameters.StackName)
+
+				if err != nil {
+					return false, errors.Wrap(err, "Error while running DeleteStack")
+				}
+			} else {
+				return false, errors.New(fmt.Sprintf("Stack is in %s and can't be updated, unless --force is specified", *stack.StackStatus))
+			}
+		} else {
+			requireUpdate = true
+		}
+	}
+
+	if requireUpdate {
+
+		ch := make(chan *UpdateStackEntry, 1)
+		s.updateStack(runStackParameters, stack, ch)
+
+		resp := <-ch
+
+		if resp.Err != nil {
+			return false, errors.Wrap(resp.Err, "AWS error while running UpdateStack")
+		}
+
 	} else {
 		ch := make(chan *CreateStackEntry, 1)
-
 		go s.createStack(runStackParameters, ch)
 
 		resp := <-ch
+
 		if resp.Err != nil {
-			s.logger.WithField("stackName", runStackParameters.StackName).WithError(resp.Err).Fatal("AWS error while running CreateStack")
+			return false, errors.Wrap(resp.Err, "AWS error while running CreateStack")
 		}
 
 		if resp.Record != nil {
-			s.logger.WithField("stackName", runStackParameters.StackName).Info(
+			s.logger.WithField("stackName", *runStackParameters.StackName).Info(
 				fmt.Sprintf("Stack creation has been initiated. %s", *resp.Record.StackId))
 		}
 	}
+
+	if wait {
+		return s.wait(*runStackParameters.StackName)
+	}
+
+	return true, nil
 }
 
-func (s *Stack) wait (stackName string) {
+func (s *Stack) wait (stackName string) (bool, error) {
 	ch := make(chan *StackEventsEntry, 1)
-	go s.describeStackEvents(stackName, ch)
+	go s.describeStackEvents(stackName, ch, nil)
 
 	resp := <- ch
 
 	if resp.Err != nil {
-		s.logger.WithError(resp.Err).Fatal("AWS error while running DescribeStackEventsPages")
+		return false, errors.Wrap(resp.Err, "AWS error while running DescribeStackEventsPages")
 	}
 
-	s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack has %d events", len(resp.Records)))
+	s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack has %d existing events", len(resp.Records)))
+
+	seenEvents := resp.Records
+	ticker := time.NewTicker(time.Second * 10)
+	timer := time.NewTimer(60 * time.Minute)
+
+	ch2 := make(chan *StackEntry, 1)
+	done := make(chan bool, 2)
+
+	var (
+		ok bool
+		err error
+	)
+LOOP:
+	for {
+		select {
+			case <- done:
+				s.logger.WithField("stackName", stackName).Debug("Finished polling stack")
+				break LOOP
+			case res:= <-ch:
+				if res.Err != nil {
+					return false, errors.Wrap(res.Err, "AWS error while running DescribeStackEvents")
+				}
+
+				for _, stackEvent := range res.Records {
+					s.logger.Info(stackEvent.GoString())
+					e := s.logger.WithField("Date", stackEvent.Timestamp)
+					e.WithField("Status", stackEvent.ResourceStatus)
+					e.WithField("Type", stackEvent.ResourceType)
+					e.WithField("LogicalID", stackEvent.LogicalResourceId)
+					e.Info(stackEvent.ResourceStatusReason)
+				}
+
+				if len(done) == 1 {
+					done <- true
+				}
+			case res:= <-ch2:
+				if res.Err != nil {
+					return false, errors.Wrap(res.Err, "AWS error while running DescribeStack")
+				}
+
+				switch *res.Record.StackStatus {
+					case cloudformation.StackStatusCreateFailed,
+						cloudformation.StackStatusRollbackFailed,
+						cloudformation.StackStatusUpdateRollbackFailed,
+						cloudformation.StackStatusRollbackComplete,
+						cloudformation.StackStatusUpdateRollbackComplete:
+						err = errors.New(fmt.Sprintf("Stack deployment has failed with state: %s", *res.Record.StackStatus))
+						done <- true
+						break
+					case cloudformation.StackStatusCreateComplete,
+						cloudformation.StackStatusUpdateComplete:
+						s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack deployment has been finished with state %s", *res.Record.StackStatus))
+						ok = true
+						done <- true
+						break
+					default:
+						s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack status is %s, continue polling", *res.Record.StackStatus))
+				}
+			case <-ticker.C:
+				go s.describeStack(stackName, ch2)
+				go s.describeStackEvents(stackName, ch, seenEvents)
+			case <-timer.C:
+				return false, errors.New("Timeout while polling stack status")
+		}
+	}
+
+	return ok, err
+}
+
+func (s *Stack) isStackInProgressOrFailedCreation(stackStatus string) bool {
+	if stackStatus == cloudformation.StackStatusCreateFailed {
+		return true
+	}
+
+	if stackStatus == cloudformation.StackStatusRollbackComplete {
+		return true
+	}
+
+	return strings.HasSuffix(stackStatus, "_IN_PROGRESS")
 }
 
 func (s *Stack) createStack(runStackParameters *RunStackParameters, ch chan<- *CreateStackEntry) {
-	s.logger.WithField("stackName", runStackParameters.StackName).Debug("Creating new stack")
+	s.logger.WithField("stackName", *runStackParameters.StackName).Debug("Creating new stack")
 
 	resp, err := s.svc.CreateStack(&cloudformation.CreateStackInput{
 		StackName: runStackParameters.StackName,
@@ -212,6 +384,47 @@ func (s *Stack) createStack(runStackParameters *RunStackParameters, ch chan<- *C
 
 }
 
-func (s *Stack) updateStack(runStackParameters *RunStackParameters) {
+func (s *Stack) mergeParameters(runStackParameters *RunStackParameters, stack *cloudformation.Stack) []*cloudformation.Parameter {
+	parameters := runStackParameters.Parameters
 
+	isParameterSpecified := func(parameterKey string) bool {
+		for _, p := range runStackParameters.Parameters {
+			if parameterKey == *p.ParameterKey {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	for _, p := range stack.Parameters {
+		if !isParameterSpecified(*p.ParameterKey) {
+			parameters = append(parameters, &cloudformation.Parameter{
+				ParameterKey: p.ParameterKey,
+				UsePreviousValue: aws.Bool(true),
+			})
+		}
+	}
+
+	return parameters
+}
+
+func (s *Stack) updateStack(runStackParameters *RunStackParameters, stack *cloudformation.Stack, ch chan<- *UpdateStackEntry) {
+	s.logger.WithField("stackName", *runStackParameters.StackName).Debug("Updating existing stack")
+
+	parameters := s.mergeParameters(runStackParameters, stack)
+	resp, err := s.svc.UpdateStack(&cloudformation.UpdateStackInput{
+		StackName: runStackParameters.StackName,
+		TemplateBody: runStackParameters.TemplateBody,
+		TemplateURL: runStackParameters.TemplateURL,
+		Parameters: parameters,
+		Tags: runStackParameters.Tags,
+	})
+
+	if err != nil {
+		ch <- &UpdateStackEntry{Err:err}
+		return
+	}
+
+	ch <- &UpdateStackEntry{Record: resp}
 }
