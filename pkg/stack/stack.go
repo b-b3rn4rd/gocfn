@@ -210,6 +210,7 @@ func (s *Stack) deleteStack(stackName string) (bool, error) {
 	return true, nil
 }
 
+
 func (s *Stack) RunStack(runStackParameters *RunStackParameters, wait bool, force bool) (bool, error){
 	s.logger.WithField("stackName", *runStackParameters.StackName).Debug("Running stack")
 
@@ -220,6 +221,7 @@ func (s *Stack) RunStack(runStackParameters *RunStackParameters, wait bool, forc
 	}
 
 	requireUpdate := false
+	seenEvents := map[string]*cloudformation.StackEvent{}
 
 	if exists {
 		if *stack.StackStatus == cloudformation.StackStatusCreateFailed ||
@@ -240,6 +242,18 @@ func (s *Stack) RunStack(runStackParameters *RunStackParameters, wait bool, forc
 	}
 
 	if requireUpdate {
+		stackEventsChannel := make(chan *StackEventsEntry, 1)
+		go s.describeStackEvents(*runStackParameters.StackName, stackEventsChannel, nil)
+
+		res := <- stackEventsChannel
+
+		if res.Err != nil {
+			return false, errors.Wrap(res.Err, "AWS error while running DescribeStackEventsPages")
+		}
+
+		s.logger.WithField("stackName", *runStackParameters.StackName).Debug(fmt.Sprintf("Stack has %d existing events", len(res.Records)))
+
+		seenEvents = res.Records
 
 		ch := make(chan *UpdateStackEntry, 1)
 		s.updateStack(runStackParameters, stack, ch)
@@ -267,25 +281,14 @@ func (s *Stack) RunStack(runStackParameters *RunStackParameters, wait bool, forc
 	}
 
 	if wait {
-		return s.wait(*runStackParameters.StackName)
+		return s.wait(*runStackParameters.StackName, seenEvents)
 	}
 
 	return true, nil
 }
 
-func (s *Stack) wait (stackName string) (bool, error) {
+func (s *Stack) wait (stackName string, seenEvents map[string]*cloudformation.StackEvent) (bool, error) {
 	ch := make(chan *StackEventsEntry, 1)
-	go s.describeStackEvents(stackName, ch, nil)
-
-	resp := <- ch
-
-	if resp.Err != nil {
-		return false, errors.Wrap(resp.Err, "AWS error while running DescribeStackEventsPages")
-	}
-
-	s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack has %d existing events", len(resp.Records)))
-
-	seenEvents := resp.Records
 	ticker := time.NewTicker(time.Second * 10)
 	timer := time.NewTimer(60 * time.Minute)
 
@@ -296,30 +299,51 @@ func (s *Stack) wait (stackName string) (bool, error) {
 		ok bool
 		err error
 	)
+
 LOOP:
 	for {
 		select {
 			case <- done:
 				s.logger.WithField("stackName", stackName).Debug("Finished polling stack")
+
 				break LOOP
 			case res:= <-ch:
+
 				if res.Err != nil {
 					return false, errors.Wrap(res.Err, "AWS error while running DescribeStackEvents")
 				}
 
 				for _, stackEvent := range res.Records {
-					s.logger.Info(stackEvent.GoString())
-					e := s.logger.WithField("Date", stackEvent.Timestamp)
-					e.WithField("Status", stackEvent.ResourceStatus)
-					e.WithField("Type", stackEvent.ResourceType)
-					e.WithField("LogicalID", stackEvent.LogicalResourceId)
-					e.Info(stackEvent.ResourceStatusReason)
+
+					e := s.logger.WithField("Date", *stackEvent.Timestamp)
+
+					if stackEvent.ResourceStatus != nil {
+						e = e.WithField("Status", *stackEvent.ResourceStatus)
+					}
+
+					if stackEvent.ResourceType != nil {
+						e = e.WithField("Type", *stackEvent.ResourceType)
+					}
+
+					if stackEvent.LogicalResourceId != nil {
+						e = e.WithField("LogicalID", *stackEvent.LogicalResourceId)
+					}
+
+					if stackEvent.ResourceStatusReason != nil {
+						e.Info(*stackEvent.ResourceStatusReason)
+					} else {
+						e.Info("")
+					}
+
+					seenEvents[*stackEvent.EventId] = stackEvent
 				}
 
 				if len(done) == 1 {
 					done <- true
 				}
+
 			case res:= <-ch2:
+
 				if res.Err != nil {
 					return false, errors.Wrap(res.Err, "AWS error while running DescribeStack")
 				}
@@ -343,6 +367,8 @@ LOOP:
 						s.logger.WithField("stackName", stackName).Debug(fmt.Sprintf("Stack status is %s, continue polling", *res.Record.StackStatus))
 				}
 			case <-ticker.C:
+				s.logger.WithField("stackName", stackName).Debug("Polling stack")
+
 				go s.describeStack(stackName, ch2)
 				go s.describeStackEvents(stackName, ch, seenEvents)
 			case <-timer.C:
