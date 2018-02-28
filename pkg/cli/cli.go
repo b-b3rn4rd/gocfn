@@ -2,10 +2,9 @@ package cli
 
 import (
 	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"encoding/json"
+
 	"github.com/alecthomas/kingpin"
-	"os"
-	"io/ioutil"
+
 	"fmt"
 	"regexp"
 	"github.com/aws/aws-sdk-go/aws"
@@ -16,17 +15,19 @@ type CFNTagsValue []*cloudformation.Tag
 type KeyValValue map[string]string
 
 func (h *CFNParametersValue) Set(value string) (error) {
-	if _, err := os.Stat(value); err == nil {
-		raw, err := ioutil.ReadFile(value)
+	var r = regexp.MustCompile("(\\w+)=(\\w+)")
 
-		if err != nil {
-			return err
-		}
+	keysVars := r.FindAllStringSubmatch(value, -1)
 
-		return json.Unmarshal(raw, &h)
+	if len(keysVars) == 0 {
+		return fmt.Errorf("expected ParameterKey1=ParameterValue1 got '%s'", value)
+	}
 
-	} else {
-		return json.Unmarshal([]byte(value), &h)
+	for _, kv := range keysVars {
+		*h = append(*h, &cloudformation.Parameter{
+			ParameterKey: aws.String(kv[1]),
+			ParameterValue: aws.String(kv[2]),
+		})
 	}
 
 	return nil
@@ -70,13 +71,6 @@ func CFNTags(s kingpin.Settings) (target *CFNTagsValue) {
 	s.SetValue((*CFNTagsValue)(target))
 	return
 }
-
-
-
-
-
-
-
 
 
 func (m *KeyValValue) Set(value string) (error) {
