@@ -145,4 +145,6 @@ func (s *Deployer) CreateAndWaitForChangeset(stackName *string, templateFile *st
 	}
 
 	fmt.Println(changeSetId)
+
+	return nil
 }
