@@ -1,7 +1,8 @@
 package main
 
 import (
-	"github.com/b-b3rn4rd/cfn/pkg/stack"
+	"github.com/b-b3rn4rd/cfn/pkg/deployer"
+	"github.com/b-b3rn4rd/cfn/pkg/uploader"
 	"github.com/b-b3rn4rd/cfn/pkg/cli"
 	"github.com/alecthomas/kingpin"
 	"github.com/sirupsen/logrus"
@@ -17,9 +18,6 @@ import (
 	"io/ioutil"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
-	"github.com/aws/aws-sdk-go/service/iam"
 )
 
 var (
@@ -35,7 +33,7 @@ var (
 	s3Prefix = deployCommand.Flag("s3-prefix", "A prefix name that the command adds to the artifacts name when it uploads them to the S3 bucket.").String()
 	kmsKeyId = deployCommand.Flag("kms-key-id", "The ID of an AWS KMS key that the command uses to encrypt artifacts that are at rest in the S3 bucket.").String()
 	parameterOverrides = cli.CFNParameters(deployCommand.Flag("parameter-overrides", "A list of parameter structures that specify input parameters for your stack template."))
-	capabilities = deployCommand.Flag("capabilities", "A list of capabilities that you must specify before AWS Cloudformation can create certain stacks.").Enum("CAPABILITY_IAM", "CAPABILITY_NAMED_IAM")
+	capabilities = deployCommand.Flag("capabilities", "A list of capabilities that you must specify before AWS Cloudformation can create certain stacks.").Enums("CAPABILITY_IAM", "CAPABILITY_NAMED_IAM")
 	noExecuteChangeset = deployCommand.Flag("no-execute-changeset", "Indicates whether to execute the change set. Specify this flag if you want to view your stack changes before executing").Bool()
 	roleArn = deployCommand.Flag("role-arn", "The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role").String()
 	notificationArns = deployCommand.Flag("notification-arns", "The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role.").Strings()
@@ -62,57 +60,40 @@ func main()  {
 		Region: aws.String("us-west-2")},
 	)
 	cfnSvc := (cloudformationiface.CloudFormationAPI)(cloudformation.New(sess))
+	s3Svc := (s3iface.S3API)(s3.New(sess))
 
-	 var s3Uploader s3manageriface.UploaderAPI
+	var s3Uploader *uploader.Uploader
 
 	if *s3Bucket != "" {
-		s3Uploader = (s3manageriface.UploaderAPI)(s3manager.NewUploader(sess))
+		s3Uploader = uploader.New(s3Svc, s3Bucket, s3Prefix, kmsKeyId, forceUpload)
 	}
 
 
-
-	fmt.Println(cfnSvc)
-	fmt.Println(*tags)
-	fmt.Println(*parameterOverrides)
-	fmt.Println(*templateFile)
 
 
 
 	switch command {
 		case "deploy":
-			raw, _ := ioutil.ReadFile(*templateFile)
-			templateStr := string(raw)
-			fmt.Println(templateStr)
-
-			deploy(cfnSvc, s3Uploader, stackName, &templateStr, parameterOverrides, capabilities, noExecuteChangeset, roleArn, notificationArns, failOnEmptyChangeset, tags, forceDeploy)
+			deploy(cfnSvc,
+				s3Uploader,
+				stackName,
+				templateFile,
+				([]*cloudformation.Parameter)(*parameterOverrides),
+				capabilities,
+				noExecuteChangeset,
+				roleArn,
+				notificationArns,
+				failOnEmptyChangeset,
+				([]*cloudformation.Tag)(*tags),
+				forceDeploy,
+			)
 		default:
 			break
-	//case "run":
-	//	parameters := append(*stackParameters, *stackParametersFile...)
-	//	tags := append(*stackTags, *stackTagsFile...)
-	//
-	//	runStackParameters := stack.NewRunStackParameters(
-	//		stackName,
-	//		([]*cloudformation.Parameter)(parameters),
-	//		([]*cloudformation.Tag)(tags),
-	//		stackTemplateBody,
-	//		stackTemplateUrl,
-	//		[]*string{},
-	//	)
-	//
-	//	_, err := runCFNStack(*svc, runStackParameters, *wait, *stackForce)
-	//
-	//	if err != nil {
-	//		logger.WithError(err).Fatal("Error while deploying stack")
-	//	}
 	}
 }
 
-func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader s3manageriface.UploaderAPI, stackName *string, templateStr *string, parameters []*cloudformation.Parameter, capabilities *string, noExecuteChangeset bool, roleArn *string, notificationArns []*string, failOnEmptyChangeset bool, tags []*cloudformation.Tag, forceDeploy bool) {
+func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.Uploader, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool) {
+	deployer := deployer.New(cfnSvc, logger)
 
-}
-
-func runCFNStack(svc cloudformation.CloudFormation, runStackParameters *stack.RunStackParameters, wait bool, force bool) (bool, error) {
-	return stack.New(logger, svc).RunStack(runStackParameters, wait, force)
-
+	deployer.CreateAndWaitForChangeset(stackName, templateFile, parameters, capabilities, noExecuteChangeset, roleArn, notificationArns, failOnEmptyChangeset, tags, forceDeploy, s3Uploader)
 }
