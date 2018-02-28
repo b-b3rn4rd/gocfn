@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"time"
 	"github.com/pkg/errors"
-	"github.com/b-b3rn4rd/cfn/pkg/streamer"
+	//"github.com/b-b3rn4rd/cfn/pkg/streamer"
 )
 
 type Stack struct {
