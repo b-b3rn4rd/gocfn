@@ -8,10 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
 	"github.com/aws/aws-sdk-go/aws"
-	"io/ioutil"
-	"crypto/x509/pkix"
 	"os"
-	"log"
 	"io"
 	"crypto/md5"
 )

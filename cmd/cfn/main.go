@@ -13,11 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
-	"fmt"
-	//"io/ioutil"
-	"io/ioutil"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"fmt"
+	"strings"
+	"os"
 )
 
 var (
@@ -45,6 +45,12 @@ var (
 	logger = logrus.New()
 )
 
+const MsgNoExecuteChangeset = `
+Changeset created successfully. Run the following command to review changes:
+aws cloudformation describe-change-set --change-set-name %s`
+const MsgExecuteSuccess = `Successfully created/updated stack - %s`
+const MsgEmptyChangeset = `The submitted information didn't contain changes, nothing to do.`
+
 func main()  {
 	kingpin.Version(version)
 	command := kingpin.Parse()
@@ -68,13 +74,10 @@ func main()  {
 		s3Uploader = uploader.New(s3Svc, s3Bucket, s3Prefix, kmsKeyId, forceUpload)
 	}
 
-
-
-
-
 	switch command {
 		case "deploy":
-			deploy(cfnSvc,
+			deploy(
+				cfnSvc,
 				s3Uploader,
 				stackName,
 				templateFile,
@@ -87,13 +90,43 @@ func main()  {
 				([]*cloudformation.Tag)(*tags),
 				forceDeploy,
 			)
+
 		default:
 			break
 	}
 }
 
-func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.Uploader, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool) {
+func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.Uploader, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool)  {
 	deployer := deployer.New(cfnSvc, logger)
 
-	deployer.CreateAndWaitForChangeset(stackName, templateFile, parameters, capabilities, noExecuteChangeset, roleArn, notificationArns, failOnEmptyChangeset, tags, forceDeploy, s3Uploader)
+	changeSetId, changeSetType, err := deployer.CreateAndWaitForChangeset(
+		stackName,
+		templateFile,
+		parameters,
+		aws.StringSlice(*capabilities),
+		noExecuteChangeset,
+		roleArn,
+		aws.StringSlice(*notificationArns),
+		tags,
+		forceDeploy,
+		s3Uploader,
+	)
+
+	if err != nil {
+		if !*failOnEmptyChangeset {
+			if strings.Contains(err.Error(), "The submitted information didn't contain changes.") {
+				fmt.Println(MsgEmptyChangeset)
+				os.Exit(0)
+			}
+		}
+		logger.WithError(err).Fatal("Deploy error")
+	}
+
+	if *noExecuteChangeset {
+		fmt.Println(fmt.Sprintf(MsgNoExecuteChangeset, changeSetId))
+	} else {
+		err := deployer.ExecuteAndWaitForChangeset(stackName, aws.String(changeSetId), aws.String(changeSetType))
+		logger.WithError(err).Fatal("Deploy error")
+		fmt.Println(fmt.Sprintf(MsgExecuteSuccess, *stackName))
+	}
 }
