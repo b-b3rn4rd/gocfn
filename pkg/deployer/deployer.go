@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"github.com/aws/aws-sdk-go/aws"
 	"io/ioutil"
+	"sync"
 )
 
 type stackRecord struct {
@@ -202,7 +203,17 @@ func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res
 		ChangeSetName: changeSetId,
 	}
 
-	err := s.svc.WaitUntilChangeSetCreateComplete(describeChangeSetInput)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	done := make(chan bool, 1)
+
+	err := func() error {
+		defer wg.Done()
+		return s.svc.WaitUntilChangeSetCreateComplete(describeChangeSetInput)
+	}()
+
+	wg.Wait()
+	close(done)
 
 	resp, _ := s.svc.DescribeChangeSet(describeChangeSetInput)
 	res.ChangeSet = resp

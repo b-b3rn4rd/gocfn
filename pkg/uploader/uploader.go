@@ -85,7 +85,7 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 	u.logger.WithField("filename", *remotePath).Debug("Checking if file already exist")
 
 	if  u.FileExists(remotePath) && !*u.forceUpload {
-		u.logger.WithField("filename", *remotePath).WithField("TemplateUrl", u.makeUrl(remotePath)).Debug("File with same data is already exists, skipping upload")
+		u.logger.WithField("filename", *remotePath).WithField("templateUrl", u.makeUrl(remotePath)).Debug("File with same data is already exists, skipping upload")
 		return u.makeUrl(remotePath), nil
 	}
 
