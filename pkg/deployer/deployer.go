@@ -14,6 +14,17 @@ import (
 	"io/ioutil"
 )
 
+type stackRecord struct {
+	Stack *cloudformation.Stack
+	Err error
+}
+
+type changeSetRecord struct {
+	ChangeSet *cloudformation.DescribeChangeSetOutput
+	ChangeSetType *string
+	Err error
+}
+
 type Deployer struct {
 	svc cloudformationiface.CloudFormationAPI
 	logger *logrus.Logger
@@ -24,7 +35,7 @@ func New(svc cloudformationiface.CloudFormationAPI, logger *logrus.Logger) *Depl
 	return &Deployer{
 		svc:svc,
 		logger:logger,
-		changesetPrefix: "gocfn-cloudformation-package-deploy-",
+		changesetPrefix: "gocfn-cloudformation-package-deploy",
 	}
 }
 
@@ -56,15 +67,19 @@ func (s *Deployer) hasStack(stackName *string) (bool, error, *cloudformation.Sta
 		return false, nil, nil
 	}
 
-	s.logger.WithField("stackName", *stackName).Debug("Stack exist")
+	s.logger.WithField("stackName", *stackName).Debug(fmt.Sprintf("Stack exist with status %s", *resp.Stacks[0].StackStatus))
 
 	return true, nil, resp.Stacks[0]
 }
 
-func (s *Deployer) createChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) (string, string, error) {
-	t := time.Now()
-	changesetName := fmt.Sprintf("%s-%s", s.changesetPrefix, strconv.FormatInt(t.Unix(), 10))
-	description := fmt.Sprintf("Created by gocfn at %s", t.UTC().String())
+func (s *Deployer) createChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) (res *changeSetRecord) {
+
+	res = &changeSetRecord{
+		ChangeSet:&cloudformation.DescribeChangeSetOutput{},
+	}
+
+	changesetName := fmt.Sprintf("%s-%s", s.changesetPrefix, strconv.FormatInt(time.Now().Unix(), 10))
+	description := fmt.Sprintf("Created by gocfn at %s", time.Now().UTC().String())
 
 	changeSetInput := &cloudformation.CreateChangeSetInput{
 		ChangeSetName: aws.String(changesetName),
@@ -79,18 +94,21 @@ func (s *Deployer) createChangeSet(stackName *string, templateFile *string, para
 	hasStack, err, stack := s.hasStack(stackName)
 
 	if err != nil {
-		return "", "", err
+		res.Err = err
+		return
 	}
 
 	if hasStack && s.hasFailedCreation(stack.StackStatus) {
 		if !*forceDeploy {
-			return "", "", errors.New(fmt.Sprintf("Stack is in %s and can't be updated, unless --force is specified", *stack.StackStatus))
+			res.Err = errors.New(fmt.Sprintf("Stack is in %s and can't be updated, unless --force is specified", *stack.StackStatus))
+			return
 		}
 
 		_, err := s.deleteStack(stackName)
 
 		if err != nil {
-			return "", "", errors.Wrap(err, "Error while running DeleteStack")
+			res.Err = errors.Wrap(err, "Error while running DeleteStack")
+			return
 		}
 
 		hasStack = false
@@ -104,12 +122,15 @@ func (s *Deployer) createChangeSet(stackName *string, templateFile *string, para
 	changeSetInput.Parameters = parameters
 
 	if s3Uploader != nil {
+		s.logger.WithField("stackName", *stackName).Debug("Bucket is specified trying to upload the template")
 		templateUrl, err := s3Uploader.UploadWithDedup(templateFile, "template")
 
 		if err != nil {
-			return "", "", err
+			res.Err = err
+			return
 		}
 
+		s.logger.WithField("stackName", *stackName).WithField("templateUrl", templateUrl).Debug("Stack is going to be created from s3 bucket")
 		changeSetInput.TemplateURL = aws.String(templateUrl)
 	} else {
 		raw, _ := ioutil.ReadFile(*templateFile)
@@ -128,10 +149,14 @@ func (s *Deployer) createChangeSet(stackName *string, templateFile *string, para
 	resp, err := s.svc.CreateChangeSet(changeSetInput)
 
 	if err != nil {
-		return "", "", errors.Wrap(err, "AWS error while running CreateChangeSet")
+		res.Err = errors.Wrap(err, "AWS error while running CreateChangeSet")
+		return
 	}
 
-	return  *resp.Id, *changeSetInput.ChangeSetType, nil
+	res.ChangeSetType = changeSetInput.ChangeSetType
+	res.ChangeSet.ChangeSetId = resp.Id
+
+	return
 }
 
 func (s *Deployer) mergeParameters(parameters []*cloudformation.Parameter, stack *cloudformation.Stack) []*cloudformation.Parameter {
@@ -157,7 +182,19 @@ func (s *Deployer) mergeParameters(parameters []*cloudformation.Parameter, stack
 	return parameters
 }
 
-func (s *Deployer) waitForChangeset(stackName *string, changeSetId *string) error {
+func (s *Deployer) DescribeStackUnsafe(stackName *string) *cloudformation.Stack {
+	resp, _ := s.svc.DescribeStacks(&cloudformation.DescribeStacksInput{
+		StackName:stackName,
+	})
+
+	return resp.Stacks[0]
+}
+
+func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res *changeSetRecord) {
+	res = &changeSetRecord{
+		ChangeSet:&cloudformation.DescribeChangeSetOutput{},
+	}
+
 	s.logger.WithField("stackName", *stackName).Debug("Waiting for changeset to finish")
 
 	describeChangeSetInput := &cloudformation.DescribeChangeSetInput{
@@ -167,20 +204,26 @@ func (s *Deployer) waitForChangeset(stackName *string, changeSetId *string) erro
 
 	err := s.svc.WaitUntilChangeSetCreateComplete(describeChangeSetInput)
 
-	if err != nil {
-		resp, _ := s.svc.DescribeChangeSet(describeChangeSetInput)
-		if strings.Contains(*resp.StatusReason, "The submitted information didn't contain changes.") {
-			return errors.New(*resp.StatusReason)
-		}
+	resp, _ := s.svc.DescribeChangeSet(describeChangeSetInput)
+	res.ChangeSet = resp
 
-		return errors.Wrap(err, "AWS error while running WaitUntilChangeSetCreateComplete")
+	if err != nil {
+		if strings.Contains(*resp.StatusReason, "The submitted information didn't contain changes.") {
+			s.logger.WithField("stackName", *stackName).Debug("ChangeSet does not contain changes")
+			res.Err = errors.New(*resp.StatusReason)
+		} else {
+			res.Err = errors.Wrap(err, "AWS error while running WaitUntilChangeSetCreateComplete")
+		}
 	}
 
-	return nil
+	return
 }
 
-func (s *Deployer) waitForExecute(stackName *string, changeSetType *string) error {
+func (s *Deployer) WaitForExecute(stackName *string, changeSetType *string) (res *stackRecord) {
 	var err error
+	res = &stackRecord{
+		Stack: &cloudformation.Stack{},
+	}
 
 	describeStackInput := &cloudformation.DescribeStacksInput{
 		StackName: stackName,
@@ -194,11 +237,16 @@ func (s *Deployer) waitForExecute(stackName *string, changeSetType *string) erro
 		err = s.svc.WaitUntilStackUpdateComplete(describeStackInput)
 	}
 
+	res.Stack = s.DescribeStackUnsafe(stackName)
 
-	return err
+	if err != nil {
+		res.Err = errors.New(fmt.Sprintf("Failed creating/updating stack, status: %s.", *res.Stack.StackStatus))
+	}
+
+	return
 }
 
-func (s *Deployer) ExecuteAndWaitForChangeset(stackName *string, changeSetId *string, changeSetType *string) error {
+func (s *Deployer) ExecuteChangeset(stackName *string, changeSetId *string, changeSetType *string) error {
 
 	s.logger.WithField("stackName", *stackName).Debug("Running ExecuteChangeSet")
 
@@ -211,29 +259,11 @@ func (s *Deployer) ExecuteAndWaitForChangeset(stackName *string, changeSetId *st
 		return errors.Wrap(err, "AWS error while running ExecuteChangeSet")
 	}
 
-	err = s.waitForExecute(stackName, changeSetType)
-
-	if err != nil {
-		return errors.Wrap(err, "AWS error while running waiting for stack to finish")
-	}
-
 	return nil
 }
 
-func (s *Deployer) CreateAndWaitForChangeset(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) (string, string, error) {
-	changeSetId, changeSetType, err := s.createChangeSet(stackName, templateFile, parameters, capabilities, roleArn, notificationArns, tags, forceDeploy, s3Uploader)
-
-	if err != nil {
-		return changeSetId, changeSetType, err
-	}
-
-	err = s.waitForChangeset(stackName, aws.String(changeSetId))
-
-	if err != nil {
-		return changeSetType, changeSetType, err
-	}
-
-	return changeSetId, changeSetType, nil
+func (s *Deployer) CreateChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) *changeSetRecord {
+	return s.createChangeSet(stackName, templateFile, parameters, capabilities, roleArn, notificationArns, tags, forceDeploy, s3Uploader)
 }
 
 func (s *Deployer) hasFailedCreation(stackStatus *string) bool {
