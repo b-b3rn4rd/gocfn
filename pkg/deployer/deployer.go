@@ -5,6 +5,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
 	"github.com/sirupsen/logrus"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/b-b3rn4rd/cfn/pkg/streamer"
+	"github.com/b-b3rn4rd/cfn/pkg/writer"
 	"github.com/pkg/errors"
 	"strings"
 	"fmt"
@@ -12,7 +14,10 @@ import (
 	"strconv"
 	"github.com/aws/aws-sdk-go/aws"
 	"io/ioutil"
+	//"sync"
+	//"os"
 	"sync"
+	"os"
 )
 
 type stackRecord struct {
@@ -203,17 +208,7 @@ func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res
 		ChangeSetName: changeSetId,
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	done := make(chan bool, 1)
-
-	err := func() error {
-		defer wg.Done()
-		return s.svc.WaitUntilChangeSetCreateComplete(describeChangeSetInput)
-	}()
-
-	wg.Wait()
-	close(done)
+	err := s.svc.WaitUntilChangeSetCreateComplete(describeChangeSetInput)
 
 	resp, _ := s.svc.DescribeChangeSet(describeChangeSetInput)
 	res.ChangeSet = resp
@@ -232,6 +227,7 @@ func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res
 
 func (s *Deployer) WaitForExecute(stackName *string, changeSetType *string) (res *stackRecord) {
 	var err error
+
 	res = &stackRecord{
 		Stack: &cloudformation.Stack{},
 	}
@@ -242,11 +238,29 @@ func (s *Deployer) WaitForExecute(stackName *string, changeSetType *string) (res
 
 	s.logger.WithField("stackName", *stackName).Debug("Waiting for stack to be created/updated")
 
-	if *changeSetType == cloudformation.ChangeSetTypeCreate {
-		err = s.svc.WaitUntilStackCreateComplete(describeStackInput)
-	} else {
-		err = s.svc.WaitUntilStackUpdateComplete(describeStackInput)
-	}
+	var wg sync.WaitGroup
+	done := make(chan bool)
+	wg.Add(2)
+
+	go func() {
+		defer  wg.Done()
+		if *changeSetType == cloudformation.ChangeSetTypeCreate {
+			err = s.svc.WaitUntilStackCreateComplete(describeStackInput)
+		} else {
+			err = s.svc.WaitUntilStackUpdateComplete(describeStackInput)
+		}
+		done <- true
+	}()
+
+
+	go func() {
+		defer wg.Done()
+		strmr := streamer.New(s.svc, s.logger)
+		wr := writer.New(os.Stderr, writer.JsonFormatter)
+		strmr.StartStreaming(stackName, wr, done)
+	}()
+
+	wg.Wait()
 
 	res.Stack = s.DescribeStackUnsafe(stackName)
 
