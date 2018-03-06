@@ -4,6 +4,7 @@ import (
 	"github.com/b-b3rn4rd/cfn/pkg/deployer"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
 	"github.com/b-b3rn4rd/cfn/pkg/writer"
+	"github.com/b-b3rn4rd/cfn/pkg/streamer"
 	"github.com/b-b3rn4rd/cfn/pkg/cli"
 	"github.com/alecthomas/kingpin"
 	"github.com/sirupsen/logrus"
@@ -36,6 +37,7 @@ var (
 	failOnEmptyChangeset = deployCommand.Flag("fail-on-empty-changeset", "Specify if the CLI should return a non-zero exit code if there are no changes to be made to the stack").Bool()
 	tags = cli.CFNTags(deployCommand.Flag("tags", "A list of tags to associate with the stack that is created or updated."))
 	forceDeploy = deployCommand.Flag("force-deploy", "Force CloudFormation stack deployment if it's in CREATE_FAILED state.").Bool()
+	stream = deployCommand.Flag("stream", "Stream stack events during creation or update processs.").Bool()
 	logger = logrus.New()
 	errWriter = writer.New(os.Stderr, writer.JsonFormatter)
 	outWriter = writer.New(os.Stdout, writer.JsonFormatter)
@@ -85,6 +87,7 @@ func main()  {
 
 func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.Uploader, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool)  {
 	runner := deployer.New(cfnSvc, logger)
+	stmr := streamer.New(cfnSvc, logger)
 
 	changeSet := runner.CreateChangeSet(stackName, templateFile, parameters, aws.StringSlice(*capabilities), noExecuteChangeset, roleArn, aws.StringSlice(*notificationArns), tags, forceDeploy, s3Uploader)
 
@@ -97,12 +100,11 @@ func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.U
 	changeSet.Err = changeSetResult.Err
 
 	if changeSet.Err != nil {
-		if !*failOnEmptyChangeset {
+		isEmptyChangeSet := strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.")
 
-			if strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.") {
-				outWriter.Write(runner.DescribeStackUnsafe(stackName))
-				return
-			}
+		if !*failOnEmptyChangeset && isEmptyChangeSet {
+			outWriter.Write(runner.DescribeStackUnsafe(stackName))
+			os.Exit(0)
 		}
 
 		logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
@@ -110,19 +112,29 @@ func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.U
 
 	if *noExecuteChangeset {
 		outWriter.Write(changeSet.ChangeSet)
+		os.Exit(0)
+	}
+
+	if *stream {
+		seenStackEvents := stmr.DescribeStackEvents(stackName, nil)
+		if seenStackEvents.Err != nil {
+			logger.WithError(seenStackEvents.Err).Fatal("Error while gathering stack events")
+		}
+
+		changeSet.StackEvents = seenStackEvents.Records
+	}
+
+	err := runner.ExecuteChangeset(stackName, changeSet.ChangeSet.ChangeSetId, changeSet.ChangeSetType)
+
+	if err != nil {
+		logger.WithError(err).Fatal("ChangeSet execution error")
+	}
+
+	res := runner.WaitForExecute(stackName, changeSet,  stream)
+
+	if res.Err != nil {
+		logger.WithError(res.Err).Fatal("ChangeSet execution error")
 	} else {
-		err := runner.ExecuteChangeset(stackName, changeSet.ChangeSet.ChangeSetId, changeSet.ChangeSetType)
-
-		if err != nil {
-			logger.WithError(err).Fatal("ChangeSet execution error")
-		}
-
-		res := runner.WaitForExecute(stackName, changeSet.ChangeSetType)
-
-		if res.Err != nil {
-			logger.WithError(res.Err).Fatal("ChangeSet execution error")
-		} else {
-			outWriter.Write(res.Stack)
-		}
+		outWriter.Write(res.Stack)
 	}
 }

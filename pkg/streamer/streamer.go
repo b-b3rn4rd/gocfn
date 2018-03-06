@@ -29,49 +29,51 @@ func New(svc cloudformationiface.CloudFormationAPI, logger *logrus.Logger) *Stre
 	}
 }
 
-func (s *Streamer) StartStreaming(stackName *string, wr *writer.StringWriter, done <-chan bool) error {
+func (s *Streamer) StartStreaming(stackName *string, seenEvents StackEvents, wr *writer.StringWriter, done <-chan bool) error {
 	s.logger.WithField("stackName", *stackName).Debug("Start streaming stack events")
-
-	ch := make(chan *StreamerRecords, 1)
-	ticker := time.NewTicker(time.Second * 15)
-	seenEvents := map[string]*cloudformation.StackEvent{}
-	stackFinished := false
-
-	s.logger.WithField("stackName", *stackName).Debug("Gather existing stack events")
-	go s.DescribeStackEvents(stackName, ch, seenEvents)
-
-	res := <- ch
-
-	if res.Err != nil {
-		return errors.Wrap(res.Err, "AWS error while running DescribeStackEvents")
-	}
-
-	seenEvents = res.Records
 	s.logger.WithField("stackName", *stackName).Debug(fmt.Sprintf("Stack has %d existing events", len(seenEvents)))
 
-	go s.DescribeStackEvents(stackName, ch, seenEvents)
+	ch := make(chan *StackEventsRecord, 1)
+
+	ticker := time.NewTicker(time.Second * 1)
+	isStackReady := false
+	isLastPoll := false
 
 	for {
 		select {
 			case <-done:
-				stackFinished = true
+				isStackReady = true
 				s.logger.WithField("stackName", *stackName).Debug("Stack creation/update has finished")
 			case r := <-ch:
+
+
 				s.logger.WithField("stackName", *stackName).Debug("Received stack events")
+
+				if r.Err != nil {
+					return errors.Wrap(r.Err, "AWS error while running DescribeStackEvents")
+				}
 
 				for _, e := range r.Records {
 					fmt.Println(e.GoString())
+					seenEvents[*e.EventId] = e
 				}
 
-				s.logger.WithField("stackName", *stackName).Debug("Stack events have been printed")
-				if stackFinished {
-					s.logger.WithField("stackName", *stackName).Debug("Stack events have been streamed and stack is ready")
+				if isLastPoll {
+					s.logger.WithField("stackName", *stackName).Debug("Stack is ready and the last poll has finished")
 					return nil
+				}
+
+				if isStackReady {
+					isLastPoll = true
+					s.logger.WithField("stackName", *stackName).Debug("Stack is ready, doing the last poll")
 				}
 
 			case <- ticker.C:
 				s.logger.WithField("stackName", *stackName).Debug("Polling for new stack events")
-				go s.DescribeStackEvents(stackName, ch, seenEvents)
+				go func(){
+					ch <- s.DescribeStackEvents(stackName, seenEvents)
+				}()
+				ticker = time.NewTicker(time.Second * 15)
 			}
 	}
 

@@ -27,6 +27,7 @@ type stackRecord struct {
 
 type changeSetRecord struct {
 	ChangeSet *cloudformation.DescribeChangeSetOutput
+	StackEvents streamer.StackEvents
 	ChangeSetType *string
 	Err error
 }
@@ -225,7 +226,7 @@ func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res
 	return
 }
 
-func (s *Deployer) WaitForExecute(stackName *string, changeSetType *string) (res *stackRecord) {
+func (s *Deployer) WaitForExecute(stackName *string, changeSet *changeSetRecord, stream *bool) (res *stackRecord) {
 	var err error
 
 	res = &stackRecord{
@@ -240,11 +241,12 @@ func (s *Deployer) WaitForExecute(stackName *string, changeSetType *string) (res
 
 	var wg sync.WaitGroup
 	done := make(chan bool)
-	wg.Add(2)
+
+	wg.Add(1)
 
 	go func() {
 		defer  wg.Done()
-		if *changeSetType == cloudformation.ChangeSetTypeCreate {
+		if *changeSet.ChangeSetType == cloudformation.ChangeSetTypeCreate {
 			err = s.svc.WaitUntilStackCreateComplete(describeStackInput)
 		} else {
 			err = s.svc.WaitUntilStackUpdateComplete(describeStackInput)
@@ -252,13 +254,17 @@ func (s *Deployer) WaitForExecute(stackName *string, changeSetType *string) (res
 		done <- true
 	}()
 
+	if *stream {
+		s.logger.WithField("stackName", *stackName).Debug("Stream is enabled, preparing to stream stack events")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			strmr := streamer.New(s.svc, s.logger)
+			wr := writer.New(os.Stderr, writer.JsonFormatter)
+			strmr.StartStreaming(stackName, changeSet.StackEvents, wr, done)
+		}()
+	}
 
-	go func() {
-		defer wg.Done()
-		strmr := streamer.New(s.svc, s.logger)
-		wr := writer.New(os.Stderr, writer.JsonFormatter)
-		strmr.StartStreaming(stackName, wr, done)
-	}()
 
 	wg.Wait()
 
