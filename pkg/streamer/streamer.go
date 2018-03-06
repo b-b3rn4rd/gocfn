@@ -45,10 +45,6 @@ func (s *Streamer) StartStreaming(stackName *string, seenEvents StackEvents, wr 
 				isStackReady = true
 				s.logger.WithField("stackName", *stackName).Debug("Stack creation/update has finished")
 			case r := <-ch:
-
-
-				s.logger.WithField("stackName", *stackName).Debug("Received stack events")
-
 				if r.Err != nil {
 					return errors.Wrap(r.Err, "AWS error while running DescribeStackEvents")
 				}
