@@ -50,7 +50,7 @@ func (s *Streamer) StartStreaming(stackName *string, seenEvents StackEvents, wr 
 				}
 
 				for _, e := range r.Records {
-					fmt.Println(e.GoString())
+					wr.Write(e)
 					seenEvents[*e.EventId] = e
 				}
 
