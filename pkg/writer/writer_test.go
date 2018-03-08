@@ -39,3 +39,10 @@ func TestJsonFormatter(t *testing.T) {
 
 
 }
+
+func TestPlainFormatter(t *testing.T) {
+	out := &bytes.Buffer{}
+	expectedMessage := "hello world"
+	writer.PlainFormatter(out, expectedMessage)
+	assert.Equal(t, out.String(), fmt.Sprintf("%s\n", expectedMessage))
+}
