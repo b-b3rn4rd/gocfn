@@ -1,37 +1,41 @@
-package writer
+package writer_test
 
 import (
 	"testing"
-	//"github.com/stretchr/testify/require"
 	"io"
+	"github.com/stretchr/testify/assert"
+	"github.com/b-b3rn4rd/cfn/pkg/writer"
+	"bytes"
+	"encoding/json"
+	"fmt"
 )
-
-type TestWriter struct {
-	name string
-}
-
-func (TestWriter) Write(p []byte) (n int, err error) {
-	return 1, nil
-}
 
 func TestWritePassesWriterAndMessageToFormatFunction(t *testing.T) {
 	expectedMessage := "hello world"
-	exptectedWriter := "TestWriter"
-	testWriter := TestWriter{name:exptectedWriter}
-	wrt := New(testWriter, func(wr io.Writer, message interface{}) {
 
-		if wr.(TestWriter).name != exptectedWriter {
-			t.Fatalf("Format function is expected to be callbed with %s writer but got %s", exptectedWriter, wr.(TestWriter).name)
-		}
+	out := &bytes.Buffer{}
+	wrt := writer.New(out, func(wr io.Writer, message interface{}) {
 
-		if message != expectedMessage {
-			t.Fatalf("Format function is expected to be callbed with %s message but got %s", expectedMessage, message)
-		}
+		assert.Equal(t, expectedMessage, message)
+		assert.Equal(t, out, wr)
 	})
 
 	wrt.Write(expectedMessage)
 }
 
-func TestJsonFormatterWritesPrettyJsonString(t *testing.T) {
+func TestJsonFormatter(t *testing.T) {
+
+	out := &bytes.Buffer{}
+
+	message := struct {
+		Text string
+
+	}{"hello world"}
+
+	expectedMessage, _ := json.MarshalIndent(message, "", "    ")
+	writer.JsonFormatter(out, message)
+
+	assert.Equal(t, out.String(), fmt.Sprintf("%s\n", string(expectedMessage)))
+
 
 }
