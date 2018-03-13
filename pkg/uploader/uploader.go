@@ -8,10 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
 	"github.com/aws/aws-sdk-go/aws"
-	"os"
 	"io"
 	"crypto/md5"
 	"github.com/sirupsen/logrus"
+ 	"github.com/spf13/afero"
 )
 
 type Uploader struct {
@@ -22,23 +22,25 @@ type Uploader struct {
 	prefix *string
 	kmsKeyId *string
 	forceUpload *bool
+	appFs afero.Fs
 }
 
-func New(svc s3iface.S3API, logger *logrus.Logger, bucketName *string, prefix *string, kmsKeyId *string, forceUpload *bool) *Uploader {
+func New(svc s3iface.S3API, uSvc s3manageriface.UploaderAPI, logger *logrus.Logger, bucketName *string, prefix *string, kmsKeyId *string, forceUpload *bool, fs afero.Fs) *Uploader {
 
 	return &Uploader{
 		svc: svc,
 		logger: logger,
-		uploader: s3manager.NewUploaderWithClient(svc),
+		uploader: uSvc,
 		bucketName: bucketName,
 		prefix: prefix,
 		kmsKeyId: kmsKeyId,
 		forceUpload:forceUpload,
+		appFs: fs,
 	}
 }
 
-func (u *Uploader) fileChecksum(filename *string) (string, error) {
-	f, err := os.Open(*filename)
+func (u *Uploader) FileChecksum(filename *string) (string, error) {
+	f, err := u.appFs.Open(*filename)
 
 	defer f.Close()
 
@@ -64,7 +66,7 @@ func (u *Uploader) UploadWithDedup(filename *string, extension string) (string, 
 
 	u.logger.WithFields(f).Debug("Calculating md5 of uploaded file")
 
-	m5hash, err := u.fileChecksum(filename)
+	m5hash, err := u.FileChecksum(filename)
 	removePath := fmt.Sprintf("%s.%s", m5hash, extension)
 
 	u.logger.WithFields(f).WithField("Hash", m5hash).Debug(fmt.Sprintf("M5 of file content"))
@@ -85,11 +87,13 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 	u.logger.WithField("filename", *remotePath).Debug("Checking if file already exist")
 
 	if  u.FileExists(remotePath) && !*u.forceUpload {
-		u.logger.WithField("filename", *remotePath).WithField("templateUrl", u.makeUrl(remotePath)).Debug("File with same data is already exists, skipping upload")
-		return u.makeUrl(remotePath), nil
+		u.logger.WithField("filename", *remotePath).WithField("templateUrl", u.MakeUrl(remotePath)).Debug("File with same data is already exists, skipping upload")
+		return u.MakeUrl(remotePath), nil
 	}
 
-	raw, err := os.Open(*filename)
+	u.logger.WithField("filename", *remotePath).Debug("Uploading file")
+
+	raw, err := u.appFs.Open(*filename)
 
 	uploadInput := &s3manager.UploadInput{
 		Bucket:u.bucketName,
@@ -111,11 +115,18 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 		return "", errors.Wrap(err, "AWS error while uploading to s3")
 	}
 
+	logrus.WithField("filename", *remotePath).WithField("uploadId", resp.UploadID).Debug(fmt.Sprintf("File has been uploaded"))
 	return resp.Location, nil
 }
 
-func (u *Uploader) makeUrl(remotePath *string) string {
-	region := u.svc.(*s3.S3).Config.Region
+func (u *Uploader) MakeUrl(remotePath *string) string {
+	var region *string
+
+	if s3, ok := u.svc.(*s3.S3); ok {
+		region = s3.Config.Region
+	} else {
+		region = aws.String("us-west-2")
+	}
 
 	base := "https://s3.amazonaws.com"
 

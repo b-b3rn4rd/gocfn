@@ -20,12 +20,12 @@ import (
 	"os"
 )
 
-type stackRecord struct {
+type StackRecord struct {
 	Stack *cloudformation.Stack
 	Err error
 }
 
-type changeSetRecord struct {
+type ChangeSetRecord struct {
 	ChangeSet *cloudformation.DescribeChangeSetOutput
 	StackEvents streamer.StackEvents
 	ChangeSetType *string
@@ -79,9 +79,9 @@ func (s *Deployer) hasStack(stackName *string) (bool, error, *cloudformation.Sta
 	return true, nil, resp.Stacks[0]
 }
 
-func (s *Deployer) createChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) (res *changeSetRecord) {
+func (s *Deployer) createChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) (res *ChangeSetRecord) {
 
-	res = &changeSetRecord{
+	res = &ChangeSetRecord{
 		ChangeSet:&cloudformation.DescribeChangeSetOutput{},
 	}
 
@@ -197,8 +197,8 @@ func (s *Deployer) DescribeStackUnsafe(stackName *string) *cloudformation.Stack 
 	return resp.Stacks[0]
 }
 
-func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res *changeSetRecord) {
-	res = &changeSetRecord{
+func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res *ChangeSetRecord) {
+	res = &ChangeSetRecord{
 		ChangeSet:&cloudformation.DescribeChangeSetOutput{},
 	}
 
@@ -226,10 +226,10 @@ func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res
 	return
 }
 
-func (s *Deployer) WaitForExecute(stackName *string, changeSet *changeSetRecord, stream *bool) (res *stackRecord) {
+func (s *Deployer) WaitForExecute(stackName *string, changeSet *ChangeSetRecord, stream *bool) (res *StackRecord) {
 	var err error
 
-	res = &stackRecord{
+	res = &StackRecord{
 		Stack: &cloudformation.Stack{},
 	}
 
@@ -263,8 +263,10 @@ func (s *Deployer) WaitForExecute(stackName *string, changeSet *changeSetRecord,
 			wr := writer.New(os.Stderr, writer.JsonFormatter)
 			strmr.StartStreaming(stackName, changeSet.StackEvents, wr, done)
 		}()
+	} else {
+		<-done
+		s.logger.WithField("stackName", *stackName).Debug("Stack is ready and no streaming is required")
 	}
-
 
 	wg.Wait()
 
@@ -293,7 +295,7 @@ func (s *Deployer) ExecuteChangeset(stackName *string, changeSetId *string, chan
 	return nil
 }
 
-func (s *Deployer) CreateChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) *changeSetRecord {
+func (s *Deployer) CreateChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) *ChangeSetRecord {
 	return s.createChangeSet(stackName, templateFile, parameters, capabilities, roleArn, notificationArns, tags, forceDeploy, s3Uploader)
 }
 

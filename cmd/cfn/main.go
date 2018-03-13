@@ -14,8 +14,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"strings"
 	"os"
+	"github.com/spf13/afero"
 )
 
 var (
@@ -63,7 +65,8 @@ func main()  {
 	var s3Uploader *uploader.Uploader
 
 	if *s3Bucket != "" {
-		s3Uploader = uploader.New(s3Svc, logger, s3Bucket, s3Prefix, kmsKeyId, forceUpload)
+		uSvc := s3manager.NewUploaderWithClient(s3Svc)
+		s3Uploader = uploader.New(s3Svc, uSvc, logger, s3Bucket, s3Prefix, kmsKeyId, forceUpload, afero.NewOsFs())
 	}
 
 	switch command {

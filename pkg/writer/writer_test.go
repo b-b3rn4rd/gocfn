@@ -36,8 +36,6 @@ func TestJsonFormatter(t *testing.T) {
 	writer.JsonFormatter(out, message)
 
 	assert.Equal(t, out.String(), fmt.Sprintf("%s\n", string(expectedMessage)))
-
-
 }
 
 func TestPlainFormatter(t *testing.T) {
