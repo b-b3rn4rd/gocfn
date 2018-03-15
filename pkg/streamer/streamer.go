@@ -22,6 +22,11 @@ type StackEventsRecord struct {
 	Err error
 }
 
+type Streameriface interface {
+	StartStreaming(*string, StackEvents, *writer.StringWriter, <-chan bool) error
+	DescribeStackEvents(*string, StackEvents) (stackEvents *StackEventsRecord)
+}
+
 func New(svc cloudformationiface.CloudFormationAPI, logger *logrus.Logger) *Streamer {
 	return &Streamer{
 		svc:svc,
