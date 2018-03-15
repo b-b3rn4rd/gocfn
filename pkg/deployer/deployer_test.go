@@ -23,6 +23,8 @@ type mockedCloudFormationAPI struct {
 	waitUntilChangeSetCreateCompleteErr error
 	describeChangeSetOutput cloudformation.DescribeChangeSetOutput
 	describeChangeSetErr error
+	executeChangeSetOutput cloudformation.ExecuteChangeSetOutput
+	executeChangeSetErr error
 	cloudformationiface.CloudFormationAPI
 }
 
@@ -48,6 +50,10 @@ func (m mockedCloudFormationAPI) WaitUntilChangeSetCreateComplete(input *cloudfo
 
 func (m mockedCloudFormationAPI) DescribeChangeSet(input *cloudformation.DescribeChangeSetInput) (*cloudformation.DescribeChangeSetOutput, error) {
 	return &m.describeChangeSetOutput, m.describeChangeSetErr
+}
+
+func (m mockedCloudFormationAPI) ExecuteChangeSet(input *cloudformation.ExecuteChangeSetInput) (*cloudformation.ExecuteChangeSetOutput, error) {
+	return &m.executeChangeSetOutput, m.executeChangeSetErr
 }
 
 func TestCreateChangeSet(t *testing.T) {
@@ -219,8 +225,82 @@ func TestWaitForChangeSet(t *testing.T) {
 		waitUntilChangeSetCreateCompleteErr error
 		describeChangeSetOutput cloudformation.DescribeChangeSetOutput
 		describeChangeSetErr error
+		// resp
+		changeSetRecord *deployer.ChangeSetRecord
 	} {
-		"WaitForChangeSet returns errror if WaitUntilChangeSetCreateComplete has failed": {
+		"WaitForChangeSet returns errror if WaitUntilChangeSetCreateComplete has failed with unknown error": {
+			stackName: aws.String("test-stack"),
+			changeSetId: aws.String("one"),
+			waitUntilChangeSetCreateCompleteErr: errors.New("wait error"),
+			changeSetRecord:&deployer.ChangeSetRecord{
+				Err:errors.Wrap(errors.New("wait error"), "AWS error while running WaitUntilChangeSetCreateComplete"),
+				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+					StatusReason: aws.String("unknown reason"),
+				},
+			},
+			describeChangeSetOutput: cloudformation.DescribeChangeSetOutput{
+				StatusReason: aws.String("unknown reason"),
+			},
+		},
+		"WaitForChangeSet returns custom errror if changeset does not contain changes": {
+			stackName: aws.String("test-stack"),
+			changeSetId: aws.String("one"),
+			waitUntilChangeSetCreateCompleteErr: errors.New("The submitted information didn't contain changes."),
+			changeSetRecord:&deployer.ChangeSetRecord{
+				Err: errors.New("The submitted information didn't contain changes."),
+				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+					StatusReason: aws.String("The submitted information didn't contain changes."),
+				},
+			},
+			describeChangeSetOutput: cloudformation.DescribeChangeSetOutput{
+				StatusReason: aws.String("The submitted information didn't contain changes."),
+			},
+		},
+		"WaitForChangeSet fills ChangeSet field with DescribeChangeSet information": {
+			stackName: aws.String("test-stack"),
+			changeSetId: aws.String("one"),
+			changeSetRecord:&deployer.ChangeSetRecord{
+
+				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+					Status:aws.String("all good"),
+					StatusReason:aws.String("no particular reason"),
+					ChangeSetId:aws.String("one"),
+				},
+			},
+			describeChangeSetOutput: cloudformation.DescribeChangeSetOutput{
+				Status:aws.String("all good"),
+				StatusReason:aws.String("no particular reason"),
+				ChangeSetId:aws.String("one"),
+			},
+		},
+	}
+
+	for name, test := range tests {
+		svc := mockedCloudFormationAPI{
+			waitUntilChangeSetCreateCompleteErr: test.waitUntilChangeSetCreateCompleteErr,
+			describeChangeSetOutput: test.describeChangeSetOutput,
+			describeChangeSetErr: test.describeChangeSetErr,
+		}
+
+		t.Run(name, func(t *testing.T) {
+			d := deployer.New(svc, logrus.New())
+			resp := d.WaitForChangeSet(test.stackName, test.changeSetId)
+
+			if resp.Err != nil {
+				assert.EqualError(t, test.changeSetRecord.Err, resp.Err.Error())
+			}
+
+			assert.Equal(t, test.changeSetRecord.ChangeSetType, resp.ChangeSetType)
+			assert.Equal(t, test.changeSetRecord.ChangeSet, resp.ChangeSet)
+		})
+	}
+}
+
+func TestExecuteChangeset(t *testing.T) {
+	tests := map[string]struct{
+
+	}{
+		{
 
 		},
 	}
@@ -228,6 +308,6 @@ func TestWaitForChangeSet(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 
-		},
+		})
 	}
 }
