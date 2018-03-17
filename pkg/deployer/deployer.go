@@ -20,6 +20,14 @@ import (
 	"os"
 )
 
+type Deployeriface interface {
+	WaitForChangeSet(*string, *string) (*ChangeSetRecord)
+	WaitForExecute(*string, *ChangeSetRecord, streamer.Streameriface) (*StackRecord)
+	ExecuteChangeset(*string, *string) error
+	CreateChangeSet(*string, *string, []*cloudformation.Parameter, []*string, *bool, *string,  []*string,  []*cloudformation.Tag,  *bool, uploader.Uploaderiface) *ChangeSetRecord
+	DescribeStackUnsafe(stackName *string) *cloudformation.Stack
+}
+
 type StackRecord struct {
 	Stack *cloudformation.Stack
 	Err error
@@ -79,7 +87,7 @@ func (s *Deployer) hasStack(stackName *string) (bool, error, *cloudformation.Sta
 	return true, nil, resp.Stacks[0]
 }
 
-func (s *Deployer) createChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) (res *ChangeSetRecord) {
+func (s *Deployer) createChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader uploader.Uploaderiface) (res *ChangeSetRecord) {
 
 	res = &ChangeSetRecord{
 		ChangeSet:&cloudformation.DescribeChangeSetOutput{},
@@ -189,6 +197,7 @@ func (s *Deployer) mergeParameters(parameters []*cloudformation.Parameter, stack
 	return parameters
 }
 
+// Use following function ONLY when you are 100% confident that the stack exists
 func (s *Deployer) DescribeStackUnsafe(stackName *string) *cloudformation.Stack {
 	resp, _ := s.svc.DescribeStacks(&cloudformation.DescribeStacksInput{
 		StackName:stackName,
@@ -226,7 +235,7 @@ func (s *Deployer) WaitForChangeSet(stackName *string, changeSetId *string) (res
 	return
 }
 
-func (s *Deployer) WaitForExecute(stackName *string, changeSet *ChangeSetRecord, stream *bool) (res *StackRecord) {
+func (s *Deployer) WaitForExecute(stackName *string, changeSet *ChangeSetRecord, stmr streamer.Streameriface) (res *StackRecord) {
 	var err error
 
 	res = &StackRecord{
@@ -254,14 +263,13 @@ func (s *Deployer) WaitForExecute(stackName *string, changeSet *ChangeSetRecord,
 		done <- true
 	}()
 
-	if *stream {
+	if stmr != nil {
 		s.logger.WithField("stackName", *stackName).Debug("Stream is enabled, preparing to stream stack events")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			strmr := streamer.New(s.svc, s.logger)
 			wr := writer.New(os.Stderr, writer.JsonFormatter)
-			strmr.StartStreaming(stackName, changeSet.StackEvents, wr, done)
+			stmr.StartStreaming(stackName, changeSet.StackEvents, wr, done)
 		}()
 	} else {
 		<-done
@@ -279,7 +287,7 @@ func (s *Deployer) WaitForExecute(stackName *string, changeSet *ChangeSetRecord,
 	return
 }
 
-func (s *Deployer) ExecuteChangeset(stackName *string, changeSetId *string, changeSetType *string) error {
+func (s *Deployer) ExecuteChangeset(stackName *string, changeSetId *string) error {
 
 	s.logger.WithField("stackName", *stackName).Debug("Running ExecuteChangeSet")
 
@@ -295,7 +303,7 @@ func (s *Deployer) ExecuteChangeset(stackName *string, changeSetId *string, chan
 	return nil
 }
 
-func (s *Deployer) CreateChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader *uploader.Uploader) *ChangeSetRecord {
+func (s *Deployer) CreateChangeSet(stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, tags []*cloudformation.Tag, forceDeploy *bool, s3Uploader uploader.Uploaderiface) *ChangeSetRecord {
 	return s.createChangeSet(stackName, templateFile, parameters, capabilities, roleArn, notificationArns, tags, forceDeploy, s3Uploader)
 }
 

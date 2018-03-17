@@ -45,34 +45,56 @@ var (
 	outWriter = writer.New(os.Stdout, writer.JsonFormatter)
 )
 
+type Cfn struct {
+	dplr deployer.Deployeriface
+	cfnSvc cloudformationiface.CloudFormationAPI
+	logger *logrus.Logger
+	stmr streamer.Streameriface
+}
+
+func New(dplr deployer.Deployeriface, svc cloudformationiface.CloudFormationAPI, stmr streamer.Streameriface, logger *logrus.Logger) *Cfn {
+	return &Cfn{
+		dplr: dplr,
+		cfnSvc: svc,
+		logger: logger,
+		stmr: stmr,
+	}
+}
+
 func main()  {
 	kingpin.Version(version)
 	command := kingpin.Parse()
 
 	if *debug {
-		// set debug globally
 		logrus.SetLevel(logrus.DebugLevel)
-		// set debug in the logger we already created
 		logger.SetLevel(logrus.DebugLevel)
 	}
 
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String("us-west-2")},
 	)
+
 	cfnSvc := (cloudformationiface.CloudFormationAPI)(cloudformation.New(sess))
 	s3Svc := (s3iface.S3API)(s3.New(sess))
+	dplr := deployer.New(cfnSvc, logger)
 
-	var s3Uploader *uploader.Uploader
+	var s3Uploader uploader.Uploaderiface
+	var stmr streamer.Streameriface
 
 	if *s3Bucket != "" {
 		uSvc := s3manager.NewUploaderWithClient(s3Svc)
 		s3Uploader = uploader.New(s3Svc, uSvc, logger, s3Bucket, s3Prefix, kmsKeyId, forceUpload, afero.NewOsFs())
 	}
 
+	if *stream {
+		stmr = streamer.New(cfnSvc, logger)
+	}
+
+	cfn := New(dplr, cfnSvc, stmr, logger)
+
 	switch command {
 		case "deploy":
-			deploy(
-				cfnSvc,
+			cfn.deploy(
 				s3Uploader,
 				stackName,
 				templateFile,
@@ -88,17 +110,15 @@ func main()  {
 	}
 }
 
-func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.Uploader, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool)  {
-	runner := deployer.New(cfnSvc, logger)
-	stmr := streamer.New(cfnSvc, logger)
+func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool)  {
 
-	changeSet := runner.CreateChangeSet(stackName, templateFile, parameters, aws.StringSlice(*capabilities), noExecuteChangeset, roleArn, aws.StringSlice(*notificationArns), tags, forceDeploy, s3Uploader)
+	changeSet := c.dplr.CreateChangeSet(stackName, templateFile, parameters, aws.StringSlice(*capabilities), noExecuteChangeset, roleArn, aws.StringSlice(*notificationArns), tags, forceDeploy, s3Uploader)
 
 	if changeSet.Err != nil {
 		logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
 	}
 
-	changeSetResult := runner.WaitForChangeSet(stackName, changeSet.ChangeSet.ChangeSetId)
+	changeSetResult := c.dplr.WaitForChangeSet(stackName, changeSet.ChangeSet.ChangeSetId)
 	changeSet.ChangeSet = changeSetResult.ChangeSet
 	changeSet.Err = changeSetResult.Err
 
@@ -106,7 +126,7 @@ func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.U
 		isEmptyChangeSet := strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.")
 
 		if !*failOnEmptyChangeset && isEmptyChangeSet {
-			outWriter.Write(runner.DescribeStackUnsafe(stackName))
+			outWriter.Write(c.dplr.DescribeStackUnsafe(stackName))
 			os.Exit(0)
 		}
 
@@ -118,8 +138,8 @@ func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.U
 		os.Exit(0)
 	}
 
-	if *stream {
-		seenStackEvents := stmr.DescribeStackEvents(stackName, nil)
+	if c.stmr != nil {
+		seenStackEvents := c.stmr.DescribeStackEvents(stackName, nil)
 		if seenStackEvents.Err != nil {
 			logger.WithError(seenStackEvents.Err).Fatal("Error while gathering stack events")
 		}
@@ -127,13 +147,13 @@ func deploy(cfnSvc cloudformationiface.CloudFormationAPI, s3Uploader *uploader.U
 		changeSet.StackEvents = seenStackEvents.Records
 	}
 
-	err := runner.ExecuteChangeset(stackName, changeSet.ChangeSet.ChangeSetId, changeSet.ChangeSetType)
+	err := c.dplr.ExecuteChangeset(stackName, changeSet.ChangeSet.ChangeSetId)
 
 	if err != nil {
 		logger.WithError(err).Fatal("ChangeSet execution error")
 	}
 
-	res := runner.WaitForExecute(stackName, changeSet,  stream)
+	res := c.dplr.WaitForExecute(stackName, changeSet,  c.stmr)
 
 	if res.Err != nil {
 		logger.WithError(res.Err).Fatal("ChangeSet execution error")

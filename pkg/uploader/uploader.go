@@ -14,6 +14,13 @@ import (
  	"github.com/spf13/afero"
 )
 
+type Uploaderiface interface {
+	UploadWithDedup(*string, string) (string, error)
+	FileExists(*string) bool
+	FileChecksum(*string) (string, error)
+	MakeUrl(*string) string
+}
+
 type Uploader struct {
 	svc s3iface.S3API
 	logger *logrus.Logger
