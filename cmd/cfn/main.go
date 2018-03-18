@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"strings"
@@ -70,12 +69,14 @@ func main()  {
 		logger.SetLevel(logrus.DebugLevel)
 	}
 
+	logger.Formatter = &logrus.JSONFormatter{}
+
 	sess, _ := session.NewSession(&aws.Config{
 		Region: aws.String("us-west-2")},
 	)
 
-	cfnSvc := (cloudformationiface.CloudFormationAPI)(cloudformation.New(sess))
-	s3Svc := (s3iface.S3API)(s3.New(sess))
+	cfnSvc := cloudformation.New(sess)
+	s3Svc := s3.New(sess)
 	dplr := deployer.New(cfnSvc, logger)
 
 	var s3Uploader uploader.Uploaderiface
@@ -99,10 +100,10 @@ func main()  {
 				stackName,
 				templateFile,
 				([]*cloudformation.Parameter)(*parameterOverrides),
-				capabilities,
+				aws.StringSlice(*capabilities),
 				noExecuteChangeset,
 				roleArn,
-				notificationArns,
+				aws.StringSlice(*notificationArns),
 				failOnEmptyChangeset,
 				([]*cloudformation.Tag)(*tags),
 				forceDeploy,
@@ -110,12 +111,12 @@ func main()  {
 	}
 }
 
-func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities *[]string, noExecuteChangeset *bool, roleArn *string, notificationArns *[]string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool)  {
+func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templateFile *string, parameters []*cloudformation.Parameter, capabilities []*string, noExecuteChangeset *bool, roleArn *string, notificationArns []*string, failOnEmptyChangeset *bool, tags []*cloudformation.Tag, forceDeploy *bool)  {
 
-	changeSet := c.dplr.CreateChangeSet(stackName, templateFile, parameters, aws.StringSlice(*capabilities), noExecuteChangeset, roleArn, aws.StringSlice(*notificationArns), tags, forceDeploy, s3Uploader)
+	changeSet := c.dplr.CreateChangeSet(stackName, templateFile, parameters, capabilities, noExecuteChangeset, roleArn, notificationArns, tags, forceDeploy, s3Uploader)
 
 	if changeSet.Err != nil {
-		logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
+		c.logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
 	}
 
 	changeSetResult := c.dplr.WaitForChangeSet(stackName, changeSet.ChangeSet.ChangeSetId)
@@ -127,21 +128,21 @@ func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templ
 
 		if !*failOnEmptyChangeset && isEmptyChangeSet {
 			outWriter.Write(c.dplr.DescribeStackUnsafe(stackName))
-			os.Exit(0)
+			return
 		}
 
-		logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
+		c.logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
 	}
 
 	if *noExecuteChangeset {
 		outWriter.Write(changeSet.ChangeSet)
-		os.Exit(0)
+		return
 	}
 
 	if c.stmr != nil {
 		seenStackEvents := c.stmr.DescribeStackEvents(stackName, nil)
 		if seenStackEvents.Err != nil {
-			logger.WithError(seenStackEvents.Err).Fatal("Error while gathering stack events")
+			c.logger.WithError(seenStackEvents.Err).Fatal("Error while gathering stack events")
 		}
 
 		changeSet.StackEvents = seenStackEvents.Records
@@ -150,13 +151,13 @@ func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templ
 	err := c.dplr.ExecuteChangeset(stackName, changeSet.ChangeSet.ChangeSetId)
 
 	if err != nil {
-		logger.WithError(err).Fatal("ChangeSet execution error")
+		c.logger.WithError(err).Fatal("ChangeSet execution error")
 	}
 
 	res := c.dplr.WaitForExecute(stackName, changeSet,  c.stmr)
 
 	if res.Err != nil {
-		logger.WithError(res.Err).Fatal("ChangeSet execution error")
+		c.logger.WithError(res.Err).Fatal("ChangeSet execution error")
 	} else {
 		outWriter.Write(res.Stack)
 	}

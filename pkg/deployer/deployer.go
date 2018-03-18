@@ -21,8 +21,8 @@ import (
 )
 
 type Deployeriface interface {
-	WaitForChangeSet(*string, *string) (*ChangeSetRecord)
-	WaitForExecute(*string, *ChangeSetRecord, streamer.Streameriface) (*StackRecord)
+	WaitForChangeSet(*string, *string) *ChangeSetRecord
+	WaitForExecute(*string, *ChangeSetRecord, streamer.Streameriface) *StackRecord
 	ExecuteChangeset(*string, *string) error
 	CreateChangeSet(*string, *string, []*cloudformation.Parameter, []*string, *bool, *string,  []*string,  []*cloudformation.Tag,  *bool, uploader.Uploaderiface) *ChangeSetRecord
 	DescribeStackUnsafe(stackName *string) *cloudformation.Stack
