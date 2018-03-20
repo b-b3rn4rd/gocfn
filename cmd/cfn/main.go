@@ -42,6 +42,7 @@ var (
 	logger = logrus.New()
 	errWriter = writer.New(os.Stderr, writer.JsonFormatter)
 	outWriter = writer.New(os.Stdout, writer.JsonFormatter)
+	exiter = os.Exit
 )
 
 type Cfn struct {
@@ -116,7 +117,9 @@ func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templ
 	changeSet := c.dplr.CreateChangeSet(stackName, templateFile, parameters, capabilities, noExecuteChangeset, roleArn, notificationArns, tags, forceDeploy, s3Uploader)
 
 	if changeSet.Err != nil {
-		c.logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
+		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
+		exiter(1)
+		return
 	}
 
 	changeSetResult := c.dplr.WaitForChangeSet(stackName, changeSet.ChangeSet.ChangeSetId)
@@ -131,7 +134,9 @@ func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templ
 			return
 		}
 
-		c.logger.WithError(changeSet.Err).Fatal("ChangeSet creation error")
+		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
+		exiter(1)
+		return
 	}
 
 	if *noExecuteChangeset {
@@ -142,7 +147,9 @@ func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templ
 	if c.stmr != nil {
 		seenStackEvents := c.stmr.DescribeStackEvents(stackName, nil)
 		if seenStackEvents.Err != nil {
-			c.logger.WithError(seenStackEvents.Err).Fatal("Error while gathering stack events")
+			c.logger.WithError(seenStackEvents.Err).Error("Error while gathering stack events")
+			exiter(1)
+			return
 		}
 
 		changeSet.StackEvents = seenStackEvents.Records
@@ -151,13 +158,17 @@ func (c *Cfn) deploy(s3Uploader uploader.Uploaderiface, stackName *string, templ
 	err := c.dplr.ExecuteChangeset(stackName, changeSet.ChangeSet.ChangeSetId)
 
 	if err != nil {
-		c.logger.WithError(err).Fatal("ChangeSet execution error")
+		c.logger.WithError(err).Error("ChangeSet execution error")
+		exiter(1)
+		return
 	}
 
 	res := c.dplr.WaitForExecute(stackName, changeSet,  c.stmr)
 
 	if res.Err != nil {
-		c.logger.WithError(res.Err).Fatal("ChangeSet execution error")
+		c.logger.WithError(res.Err).Error("ChangeSet execution error")
+		exiter(1)
+		return
 	} else {
 		outWriter.Write(res.Stack)
 	}
