@@ -1,22 +1,21 @@
 package writer
 
 import (
-	"io"
-	"fmt"
 	"encoding/json"
+	"fmt"
+	"io"
 )
 
 type FormatFunc func(wr io.Writer, message interface{})
 
-
 type StringWriter struct {
-	wr io.Writer
+	wr     io.Writer
 	format FormatFunc
 }
 
 func New(wr io.Writer, formatter FormatFunc) *StringWriter {
 	return &StringWriter{
-		wr:wr,
+		wr:     wr,
 		format: formatter,
 	}
 }
@@ -29,7 +28,7 @@ func PlainFormatter(wr io.Writer, message interface{}) {
 	fmt.Fprintln(wr, message)
 }
 
-func JsonFormatter(wr io.Writer, message interface{}) {
+func JSONFormatter(wr io.Writer, message interface{}) {
 	raw, _ := json.MarshalIndent(message, "", "    ")
 	fmt.Fprintln(wr, string(raw))
 }

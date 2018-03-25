@@ -1,40 +1,42 @@
 package deployer_test
 
 import (
-	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
-	"testing"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/b-b3rn4rd/cfn/pkg/deployer"
-	"github.com/sirupsen/logrus"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/b-b3rn4rd/cfn/pkg/uploader"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/b-b3rn4rd/cfn/pkg/writer"
-	"github.com/b-b3rn4rd/cfn/pkg/streamer"
 	"fmt"
+	"testing"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
+	"github.com/b-b3rn4rd/cfn/pkg/command"
+	"github.com/b-b3rn4rd/cfn/pkg/deployer"
+	"github.com/b-b3rn4rd/cfn/pkg/streamer"
+	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/b-b3rn4rd/cfn/pkg/writer"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 type mockedCloudFormationAPI struct {
-	describeStacksOutput cloudformation.DescribeStacksOutput
-	describeStacksErr error
-	createChangeSetOutput cloudformation.CreateChangeSetOutput
-	createChangeSetErr error
-	deleteStackOutput cloudformation.DeleteStackOutput
-	deleteStackErr error
-	waitUntilStackDeleteCompleteErr error
+	describeStacksOutput                cloudformation.DescribeStacksOutput
+	describeStacksErr                   error
+	createChangeSetOutput               cloudformation.CreateChangeSetOutput
+	createChangeSetErr                  error
+	deleteStackOutput                   cloudformation.DeleteStackOutput
+	deleteStackErr                      error
+	waitUntilStackDeleteCompleteErr     error
 	waitUntilChangeSetCreateCompleteErr error
-	describeChangeSetOutput cloudformation.DescribeChangeSetOutput
-	describeChangeSetErr error
-	executeChangeSetOutput cloudformation.ExecuteChangeSetOutput
-	executeChangeSetErr error
+	describeChangeSetOutput             cloudformation.DescribeChangeSetOutput
+	describeChangeSetErr                error
+	executeChangeSetOutput              cloudformation.ExecuteChangeSetOutput
+	executeChangeSetErr                 error
 	cloudformationiface.CloudFormationAPI
 	waitUntilStackCreateCompleteErr error
 	waitUntilStackUpdateCompleteErr error
 }
 
 type mockedStreamer struct {
-	startStreaming error
+	startStreaming            error
 	describeStackEventsOutput streamer.StackEventsRecord
 }
 
@@ -84,83 +86,81 @@ func (m mockedCloudFormationAPI) WaitUntilStackUpdateComplete(input *cloudformat
 }
 
 func TestCreateChangeSet(t *testing.T) {
-	tests := map[string]struct{
-		stackName *string
-		templateFile *string
-		parameters []*cloudformation.Parameter
-		capabilities []*string
+	tests := map[string]struct {
+		stackName          *string
+		templateFile       *string
+		parameters         []*cloudformation.Parameter
+		capabilities       []*string
 		noExecuteChangeset *bool
-		roleArn *string
-		notificationArns []*string
-		tags []*cloudformation.Tag
-		forceDeploy *bool
-		s3Uploader *uploader.Uploader
+		roleArn            *string
+		notificationArns   []*string
+		tags               []*cloudformation.Tag
+		forceDeploy        *bool
+		s3Uploader         uploader.Uploaderiface
 		// func
-		describeStacksOutput cloudformation.DescribeStacksOutput
-		describeStacksErr error
+		describeStacksOutput  cloudformation.DescribeStacksOutput
+		describeStacksErr     error
 		createChangeSetOutput cloudformation.CreateChangeSetOutput
-		createChangeSetErr error
+		createChangeSetErr    error
 		cloudformationiface.CloudFormationAPI
 		deleteStackOutput cloudformation.DeleteStackOutput
-		deleteStackErr error
+		deleteStackErr    error
 		// resp
 		changeSetRecord *deployer.ChangeSetRecord
-	} {
+	}{
 		"CreateChangeSet returns error if cant describe stack": {
-			stackName: aws.String("hello"),
-			templateFile: aws.String("template.yml"),
-			parameters: []*cloudformation.Parameter{},
-			capabilities: []*string{},
+			stackName:          aws.String("hello"),
+			templateFile:       aws.String("template.yml"),
+			parameters:         []*cloudformation.Parameter{},
+			capabilities:       []*string{},
 			noExecuteChangeset: aws.Bool(false),
-			notificationArns: []*string{},
-			tags: []*cloudformation.Tag{},
-			forceDeploy: aws.Bool(false),
-			describeStacksErr: errors.New("cant describe stack error"),
+			notificationArns:   []*string{},
+			tags:               []*cloudformation.Tag{},
+			forceDeploy:        aws.Bool(false),
+			describeStacksErr:  errors.New("cant describe stack error"),
 			changeSetRecord: &deployer.ChangeSetRecord{
-				Err: errors.Wrap(errors.New("cant describe stack error"), "AWS error while running DescribeStack"),
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{},
+				Err:       errors.Wrap(errors.New("cant describe stack error"), "AWS error while running DescribeStack"),
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{},
 			},
 		},
 		"CreateChangeSet returns error if stack is in created failed and no force is specified": {
-			stackName: aws.String("hello"),
-			templateFile: aws.String("template.yml"),
-			parameters: []*cloudformation.Parameter{},
-			capabilities: []*string{},
+			stackName:          aws.String("hello"),
+			templateFile:       aws.String("template.yml"),
+			parameters:         []*cloudformation.Parameter{},
+			capabilities:       []*string{},
 			noExecuteChangeset: aws.Bool(false),
-			roleArn: aws.String(""),
-			notificationArns: []*string{},
-			tags: []*cloudformation.Tag{},
-			forceDeploy: aws.Bool(false),
+			roleArn:            aws.String(""),
+			notificationArns:   []*string{},
+			tags:               []*cloudformation.Tag{},
+			forceDeploy:        aws.Bool(false),
 			describeStacksOutput: cloudformation.DescribeStacksOutput{
 				Stacks: []*cloudformation.Stack{{
-					StackStatus:aws.String(cloudformation.StackStatusCreateFailed),
+					StackStatus: aws.String(cloudformation.StackStatusCreateFailed),
 				}},
 			},
 			changeSetRecord: &deployer.ChangeSetRecord{
-				Err: errors.New("Stack is in CREATE_FAILED and can't be updated, unless --force is specified"),
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{},
+				Err:       errors.New("stack is in CREATE_FAILED and can't be updated, unless --force is specified"),
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{},
 			},
 		},
 		"CreateChangeSet is created if stack is in created failed and force is specified": {
-			stackName: aws.String("hello"),
-			templateFile: aws.String("template.yml"),
-			parameters: []*cloudformation.Parameter{},
-			capabilities: []*string{},
+			stackName:          aws.String("hello"),
+			templateFile:       aws.String("template.yml"),
+			parameters:         []*cloudformation.Parameter{},
+			capabilities:       []*string{},
 			noExecuteChangeset: aws.Bool(false),
-			roleArn: aws.String(""),
-			notificationArns: []*string{},
-			tags: []*cloudformation.Tag{},
-			forceDeploy: aws.Bool(true),
-			deleteStackOutput: cloudformation.DeleteStackOutput{
-
-			},
+			roleArn:            aws.String(""),
+			notificationArns:   []*string{},
+			tags:               []*cloudformation.Tag{},
+			forceDeploy:        aws.Bool(true),
+			deleteStackOutput:  cloudformation.DeleteStackOutput{},
 			describeStacksOutput: cloudformation.DescribeStacksOutput{
 				Stacks: []*cloudformation.Stack{{
-					StackStatus:aws.String(cloudformation.StackStatusCreateFailed),
+					StackStatus: aws.String(cloudformation.StackStatusCreateFailed),
 				}},
 			},
 			changeSetRecord: &deployer.ChangeSetRecord{
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{
 					ChangeSetId: aws.String("test"),
 				},
 				ChangeSetType: aws.String(cloudformation.ChangeSetTypeCreate),
@@ -170,46 +170,44 @@ func TestCreateChangeSet(t *testing.T) {
 			},
 		},
 		"CreateChangeSet is failed if stack deletion has failed": {
-			stackName: aws.String("hello"),
-			templateFile: aws.String("template.yml"),
-			parameters: []*cloudformation.Parameter{},
-			capabilities: []*string{},
+			stackName:          aws.String("hello"),
+			templateFile:       aws.String("template.yml"),
+			parameters:         []*cloudformation.Parameter{},
+			capabilities:       []*string{},
 			noExecuteChangeset: aws.Bool(false),
-			roleArn: aws.String(""),
-			notificationArns: []*string{},
-			tags: []*cloudformation.Tag{},
-			forceDeploy: aws.Bool(true),
-			deleteStackErr: errors.New("cant delete stack"),
+			roleArn:            aws.String(""),
+			notificationArns:   []*string{},
+			tags:               []*cloudformation.Tag{},
+			forceDeploy:        aws.Bool(true),
+			deleteStackErr:     errors.New("cant delete stack"),
 			describeStacksOutput: cloudformation.DescribeStacksOutput{
 				Stacks: []*cloudformation.Stack{{
-					StackStatus:aws.String(cloudformation.StackStatusCreateFailed),
+					StackStatus: aws.String(cloudformation.StackStatusCreateFailed),
 				}},
 			},
 			changeSetRecord: &deployer.ChangeSetRecord{
-				Err: errors.Wrap(errors.New("cant delete stack"),"Error while running DeleteStack"),
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{},
+				Err:       errors.Wrap(errors.New("cant delete stack"), "Error while running DeleteStack"),
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{},
 			},
 		},
 		"CreateChangeSet is updated if stack exists": {
-			stackName: aws.String("hello"),
-			templateFile: aws.String("template.yml"),
-			parameters: []*cloudformation.Parameter{},
-			capabilities: []*string{},
+			stackName:          aws.String("hello"),
+			templateFile:       aws.String("template.yml"),
+			parameters:         []*cloudformation.Parameter{},
+			capabilities:       []*string{},
 			noExecuteChangeset: aws.Bool(false),
-			roleArn: aws.String(""),
-			notificationArns: []*string{},
-			tags: []*cloudformation.Tag{},
-			forceDeploy: aws.Bool(true),
-			deleteStackOutput: cloudformation.DeleteStackOutput{
-
-			},
+			roleArn:            aws.String(""),
+			notificationArns:   []*string{},
+			tags:               []*cloudformation.Tag{},
+			forceDeploy:        aws.Bool(true),
+			deleteStackOutput:  cloudformation.DeleteStackOutput{},
 			describeStacksOutput: cloudformation.DescribeStacksOutput{
 				Stacks: []*cloudformation.Stack{{
-					StackStatus:aws.String(cloudformation.StackStatusCreateComplete),
+					StackStatus: aws.String(cloudformation.StackStatusCreateComplete),
 				}},
 			},
 			changeSetRecord: &deployer.ChangeSetRecord{
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{
 					ChangeSetId: aws.String("test"),
 				},
 				ChangeSetType: aws.String(cloudformation.ChangeSetTypeUpdate),
@@ -223,16 +221,28 @@ func TestCreateChangeSet(t *testing.T) {
 	for name, test := range tests {
 		svc := mockedCloudFormationAPI{
 			createChangeSetOutput: test.createChangeSetOutput,
-			createChangeSetErr: test.createChangeSetErr,
-			describeStacksOutput: test.describeStacksOutput,
-			describeStacksErr: test.describeStacksErr,
-			deleteStackOutput: test.deleteStackOutput,
-			deleteStackErr: test.deleteStackErr,
+			createChangeSetErr:    test.createChangeSetErr,
+			describeStacksOutput:  test.describeStacksOutput,
+			describeStacksErr:     test.describeStacksErr,
+			deleteStackOutput:     test.deleteStackOutput,
+			deleteStackErr:        test.deleteStackErr,
 		}
 
 		t.Run(name, func(t *testing.T) {
 			d := deployer.New(svc, logrus.New())
-			resp := d.CreateChangeSet(test.stackName, test.templateFile, test.parameters, test.capabilities, test.noExecuteChangeset, test.roleArn, test.notificationArns, test.tags, test.forceDeploy, test.s3Uploader)
+			resp := d.CreateChangeSet(&command.DeployParams{
+				StackName:          test.stackName,
+				TemplateFile:       test.templateFile,
+				Parameters:         test.parameters,
+				Capabilities:       test.capabilities,
+				NoExecuteChangeset: test.noExecuteChangeset,
+				RoleArn:            test.roleArn,
+				NotificationArns:   test.notificationArns,
+				Tags:               test.tags,
+				ForceDeploy:        test.forceDeploy,
+				S3Uploader:         test.s3Uploader,
+			},
+			)
 
 			if resp.Err != nil {
 				assert.EqualError(t, test.changeSetRecord.Err, resp.Err.Error())
@@ -246,22 +256,22 @@ func TestCreateChangeSet(t *testing.T) {
 }
 
 func TestWaitForChangeSet(t *testing.T) {
-	tests := map[string]struct{
-		stackName *string
-		changeSetId *string
+	tests := map[string]struct {
+		stackName                           *string
+		changeSetId                         *string
 		waitUntilChangeSetCreateCompleteErr error
-		describeChangeSetOutput cloudformation.DescribeChangeSetOutput
-		describeChangeSetErr error
+		describeChangeSetOutput             cloudformation.DescribeChangeSetOutput
+		describeChangeSetErr                error
 		// resp
 		changeSetRecord *deployer.ChangeSetRecord
-	} {
+	}{
 		"WaitForChangeSet returns errror if WaitUntilChangeSetCreateComplete has failed with unknown error": {
-			stackName: aws.String("test-stack"),
-			changeSetId: aws.String("one"),
+			stackName:                           aws.String("test-stack"),
+			changeSetId:                         aws.String("one"),
 			waitUntilChangeSetCreateCompleteErr: errors.New("wait error"),
-			changeSetRecord:&deployer.ChangeSetRecord{
-				Err:errors.Wrap(errors.New("wait error"), "AWS error while running WaitUntilChangeSetCreateComplete"),
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+			changeSetRecord: &deployer.ChangeSetRecord{
+				Err: errors.Wrap(errors.New("wait error"), "AWS error while running WaitUntilChangeSetCreateComplete"),
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{
 					StatusReason: aws.String("unknown reason"),
 				},
 			},
@@ -270,12 +280,12 @@ func TestWaitForChangeSet(t *testing.T) {
 			},
 		},
 		"WaitForChangeSet returns custom errror if changeset does not contain changes": {
-			stackName: aws.String("test-stack"),
-			changeSetId: aws.String("one"),
+			stackName:                           aws.String("test-stack"),
+			changeSetId:                         aws.String("one"),
 			waitUntilChangeSetCreateCompleteErr: errors.New("The submitted information didn't contain changes."),
-			changeSetRecord:&deployer.ChangeSetRecord{
+			changeSetRecord: &deployer.ChangeSetRecord{
 				Err: errors.New("The submitted information didn't contain changes."),
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{
 					StatusReason: aws.String("The submitted information didn't contain changes."),
 				},
 			},
@@ -284,20 +294,20 @@ func TestWaitForChangeSet(t *testing.T) {
 			},
 		},
 		"WaitForChangeSet fills ChangeSet field with DescribeChangeSet information": {
-			stackName: aws.String("test-stack"),
+			stackName:   aws.String("test-stack"),
 			changeSetId: aws.String("one"),
-			changeSetRecord:&deployer.ChangeSetRecord{
+			changeSetRecord: &deployer.ChangeSetRecord{
 
-				ChangeSet:&cloudformation.DescribeChangeSetOutput{
-					Status:aws.String("all good"),
-					StatusReason:aws.String("no particular reason"),
-					ChangeSetId:aws.String("one"),
+				ChangeSet: &cloudformation.DescribeChangeSetOutput{
+					Status:       aws.String("all good"),
+					StatusReason: aws.String("no particular reason"),
+					ChangeSetId:  aws.String("one"),
 				},
 			},
 			describeChangeSetOutput: cloudformation.DescribeChangeSetOutput{
-				Status:aws.String("all good"),
-				StatusReason:aws.String("no particular reason"),
-				ChangeSetId:aws.String("one"),
+				Status:       aws.String("all good"),
+				StatusReason: aws.String("no particular reason"),
+				ChangeSetId:  aws.String("one"),
 			},
 		},
 	}
@@ -305,8 +315,8 @@ func TestWaitForChangeSet(t *testing.T) {
 	for name, test := range tests {
 		svc := mockedCloudFormationAPI{
 			waitUntilChangeSetCreateCompleteErr: test.waitUntilChangeSetCreateCompleteErr,
-			describeChangeSetOutput: test.describeChangeSetOutput,
-			describeChangeSetErr: test.describeChangeSetErr,
+			describeChangeSetOutput:             test.describeChangeSetOutput,
+			describeChangeSetErr:                test.describeChangeSetErr,
 		}
 
 		t.Run(name, func(t *testing.T) {
@@ -324,32 +334,32 @@ func TestWaitForChangeSet(t *testing.T) {
 }
 
 func TestExecuteChangeset(t *testing.T) {
-	tests := map[string]struct{
-		stackName *string
+	tests := map[string]struct {
+		stackName   *string
 		changeSetId *string
 		// func
 		executeChangeSetOutput cloudformation.ExecuteChangeSetOutput
-		executeChangeSetErr error
+		executeChangeSetErr    error
 		//
 		err error
 	}{
-		"ExecuteChangeset returns nil when no errors occured": {
-			stackName: aws.String("test-stack"),
-			changeSetId: aws.String("one"),
+		"ExecuteChangeset returns nil when no errors occurred": {
+			stackName:              aws.String("test-stack"),
+			changeSetId:            aws.String("one"),
 			executeChangeSetOutput: cloudformation.ExecuteChangeSetOutput{},
 		},
-		"ExecuteChangeset returns err error occured": {
-			stackName: aws.String("test-stack"),
-			changeSetId: aws.String("one"),
+		"ExecuteChangeset returns err error occurred": {
+			stackName:           aws.String("test-stack"),
+			changeSetId:         aws.String("one"),
 			executeChangeSetErr: errors.New("execute error"),
-			err: errors.Wrap(errors.New("execute error"), "AWS error while running ExecuteChangeSet"),
+			err:                 errors.Wrap(errors.New("execute error"), "AWS error while running ExecuteChangeSet"),
 		},
 	}
 
 	for name, test := range tests {
 		svc := mockedCloudFormationAPI{
 			executeChangeSetOutput: test.executeChangeSetOutput,
-			executeChangeSetErr: test.executeChangeSetErr,
+			executeChangeSetErr:    test.executeChangeSetErr,
 		}
 
 		t.Run(name, func(t *testing.T) {
@@ -362,15 +372,13 @@ func TestExecuteChangeset(t *testing.T) {
 	}
 }
 
-func TestWaitForExecute(t *testing.T)  {
-	tests := map[string]struct{
-		stackName *string
-		changeSet *deployer.ChangeSetRecord
-		describeStackEventsOutput streamer.StackEventsRecord
-		startStreaming error
+func TestWaitForExecute(t *testing.T) {
+	tests := map[string]struct {
+		stackName                       *string
+		changeSet                       *deployer.ChangeSetRecord
 		waitUntilStackCreateCompleteErr error
 		waitUntilStackUpdateCompleteErr error
-		describeStacksOutput cloudformation.DescribeStacksOutput
+		describeStacksOutput            cloudformation.DescribeStacksOutput
 		//
 		stackRecord deployer.StackRecord
 		// streamer
@@ -381,12 +389,12 @@ func TestWaitForExecute(t *testing.T)  {
 			changeSet: &deployer.ChangeSetRecord{
 				ChangeSetType: aws.String(cloudformation.ChangeSetTypeCreate),
 			},
-			waitUntilStackCreateCompleteErr: errors.New("error occured"),
+			waitUntilStackCreateCompleteErr: errors.New("error occurred"),
 			stackRecord: deployer.StackRecord{
 				Stack: &cloudformation.Stack{
 					StackStatus: aws.String(cloudformation.StackStatusCreateFailed),
 				},
-				Err: errors.New(fmt.Sprintf("Failed creating/updating stack, status: %s.", cloudformation.StackStatusCreateFailed)),
+				Err: errors.New(fmt.Sprintf("failed creating/updating stack, status: %s", cloudformation.StackStatusCreateFailed)),
 			},
 			describeStacksOutput: cloudformation.DescribeStacksOutput{
 				Stacks: []*cloudformation.Stack{{
@@ -399,12 +407,12 @@ func TestWaitForExecute(t *testing.T)  {
 			changeSet: &deployer.ChangeSetRecord{
 				ChangeSetType: aws.String(cloudformation.ChangeSetTypeUpdate),
 			},
-			waitUntilStackUpdateCompleteErr: errors.New("error occured"),
+			waitUntilStackUpdateCompleteErr: errors.New("error occurred"),
 			stackRecord: deployer.StackRecord{
 				Stack: &cloudformation.Stack{
 					StackStatus: aws.String(cloudformation.StackStatusUpdateRollbackFailed),
 				},
-				Err: errors.New(fmt.Sprintf("Failed creating/updating stack, status: %s.", cloudformation.StackStatusUpdateRollbackFailed)),
+				Err: errors.New(fmt.Sprintf("failed creating/updating stack, status: %s", cloudformation.StackStatusUpdateRollbackFailed)),
 			},
 			describeStacksOutput: cloudformation.DescribeStacksOutput{
 				Stacks: []*cloudformation.Stack{{
@@ -443,9 +451,7 @@ func TestWaitForExecute(t *testing.T)  {
 					StackStatus: aws.String(cloudformation.StackStatusCreateComplete),
 				}},
 			},
-			stmr: mockedStreamer{
-
-			},
+			stmr: mockedStreamer{},
 		},
 	}
 
@@ -453,7 +459,7 @@ func TestWaitForExecute(t *testing.T)  {
 		svc := mockedCloudFormationAPI{
 			waitUntilStackCreateCompleteErr: test.waitUntilStackCreateCompleteErr,
 			waitUntilStackUpdateCompleteErr: test.waitUntilStackUpdateCompleteErr,
-			describeStacksOutput: test.describeStacksOutput,
+			describeStacksOutput:            test.describeStacksOutput,
 		}
 
 		t.Run(name, func(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 
 	"fmt"
 	"regexp"
+
 	"github.com/aws/aws-sdk-go/aws"
 )
 
@@ -14,8 +15,8 @@ type CFNParametersValue []*cloudformation.Parameter
 type CFNTagsValue []*cloudformation.Tag
 type KeyValValue map[string]string
 
-func (h *CFNParametersValue) Set(value string) (error) {
-	var r = regexp.MustCompile("(\\w+)=(\\w+)")
+func (h *CFNParametersValue) Set(value string) error {
+	var r = regexp.MustCompile(`(\w+)=(\w+)`)
 
 	keysVars := r.FindAllStringSubmatch(value, -1)
 
@@ -25,7 +26,7 @@ func (h *CFNParametersValue) Set(value string) (error) {
 
 	for _, kv := range keysVars {
 		*h = append(*h, &cloudformation.Parameter{
-			ParameterKey: aws.String(kv[1]),
+			ParameterKey:   aws.String(kv[1]),
 			ParameterValue: aws.String(kv[2]),
 		})
 	}
@@ -39,12 +40,12 @@ func (h *CFNParametersValue) String() string {
 
 func CFNParameters(s kingpin.Settings) (target *CFNParametersValue) {
 	target = &CFNParametersValue{}
-	s.SetValue((*CFNParametersValue)(target))
+	s.SetValue(target)
 	return
 }
 
-func (h *CFNTagsValue) Set(value string) (error) {
-	var r = regexp.MustCompile("(\\w+)=(\\w+)")
+func (h *CFNTagsValue) Set(value string) error {
+	var r = regexp.MustCompile(`(\w+)=(\w+)`)
 
 	keysVars := r.FindAllStringSubmatch(value, -1)
 
@@ -54,7 +55,7 @@ func (h *CFNTagsValue) Set(value string) (error) {
 
 	for _, kv := range keysVars {
 		*h = append(*h, &cloudformation.Tag{
-			Key: aws.String(kv[1]),
+			Key:   aws.String(kv[1]),
 			Value: aws.String(kv[2]),
 		})
 	}
@@ -68,13 +69,12 @@ func (h *CFNTagsValue) String() string {
 
 func CFNTags(s kingpin.Settings) (target *CFNTagsValue) {
 	target = &CFNTagsValue{}
-	s.SetValue((*CFNTagsValue)(target))
+	s.SetValue(target)
 	return
 }
 
-
-func (m *KeyValValue) Set(value string) (error) {
-	var r = regexp.MustCompile("(\\w+)=(\\w+)")
+func (m *KeyValValue) Set(value string) error {
+	var r = regexp.MustCompile(`(\w+)=(\w+)`)
 	keysVars := r.FindAllStringSubmatch(value, -1)
 	if len(keysVars) == 0 {
 		return fmt.Errorf("expected KEY=VALUE got '%s'", value)
@@ -87,7 +87,7 @@ func (m *KeyValValue) Set(value string) (error) {
 	return nil
 }
 
-func (h *KeyValValue) String() string {
+func (m *KeyValValue) String() string {
 	return ""
 }
 

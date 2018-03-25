@@ -1,0 +1,9 @@
+build:
+  main: cmd/cfn/main.go
+  binary: gocfn
+  goos:
+    - darwin
+    - linux
+    - windows
+  goarch:
+    - amd64

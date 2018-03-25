@@ -1,48 +1,49 @@
 package uploader
 
 import (
+	"crypto/md5"
 	"fmt"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"io"
+
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/pkg/errors"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
-	"github.com/aws/aws-sdk-go/aws"
-	"io"
-	"crypto/md5"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
- 	"github.com/spf13/afero"
+	"github.com/spf13/afero"
 )
 
 type Uploaderiface interface {
 	UploadWithDedup(*string, string) (string, error)
 	FileExists(*string) bool
 	FileChecksum(*string) (string, error)
-	MakeUrl(*string) string
+	MakeURL(*string) string
 }
 
 type Uploader struct {
-	svc s3iface.S3API
-	logger *logrus.Logger
-	uploader s3manageriface.UploaderAPI
-	bucketName *string
-	prefix *string
-	kmsKeyId *string
+	svc         s3iface.S3API
+	logger      *logrus.Logger
+	uploader    s3manageriface.UploaderAPI
+	bucketName  *string
+	prefix      *string
+	kmsKeyID    *string
 	forceUpload *bool
-	appFs afero.Fs
+	appFs       afero.Fs
 }
 
-func New(svc s3iface.S3API, uSvc s3manageriface.UploaderAPI, logger *logrus.Logger, bucketName *string, prefix *string, kmsKeyId *string, forceUpload *bool, fs afero.Fs) *Uploader {
+func New(svc s3iface.S3API, uSvc s3manageriface.UploaderAPI, logger *logrus.Logger, bucketName *string, prefix *string, kmsKeyID *string, forceUpload *bool, fs afero.Fs) *Uploader {
 
 	return &Uploader{
-		svc: svc,
-		logger: logger,
-		uploader: uSvc,
-		bucketName: bucketName,
-		prefix: prefix,
-		kmsKeyId: kmsKeyId,
-		forceUpload:forceUpload,
-		appFs: fs,
+		svc:         svc,
+		logger:      logger,
+		uploader:    uSvc,
+		bucketName:  bucketName,
+		prefix:      prefix,
+		kmsKeyID:    kmsKeyID,
+		forceUpload: forceUpload,
+		appFs:       fs,
 	}
 }
 
@@ -67,8 +68,8 @@ func (u *Uploader) FileChecksum(filename *string) (string, error) {
 func (u *Uploader) UploadWithDedup(filename *string, extension string) (string, error) {
 	f := logrus.Fields{
 		"bucketName": *u.bucketName,
-		"prefix": *u.prefix,
-		"filename": *filename,
+		"prefix":     *u.prefix,
+		"filename":   *filename,
 	}
 
 	u.logger.WithFields(f).Debug("Calculating md5 of uploaded file")
@@ -93,25 +94,29 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 
 	u.logger.WithField("filename", *remotePath).Debug("Checking if file already exist")
 
-	if  u.FileExists(remotePath) && !*u.forceUpload {
-		u.logger.WithField("filename", *remotePath).WithField("templateUrl", u.MakeUrl(remotePath)).Debug("File with same data is already exists, skipping upload")
-		return u.MakeUrl(remotePath), nil
+	if u.FileExists(remotePath) && !*u.forceUpload {
+		u.logger.WithField("filename", *remotePath).WithField("templateUrl", u.MakeURL(remotePath)).Debug("File with same data is already exists, skipping upload")
+		return u.MakeURL(remotePath), nil
 	}
 
 	u.logger.WithField("filename", *remotePath).Debug("Uploading file")
 
 	raw, err := u.appFs.Open(*filename)
 
-	uploadInput := &s3manager.UploadInput{
-		Bucket:u.bucketName,
-		Key: remotePath,
-		Body: raw,
+	if err != nil {
+		return "", errors.Wrap(err, "Error while opening filename")
 	}
 
-	if *u.kmsKeyId != "" {
-		u.logger.WithField("kmsKeyId", *u.kmsKeyId).Debug("KMS key is specified")
+	uploadInput := &s3manager.UploadInput{
+		Bucket: u.bucketName,
+		Key:    remotePath,
+		Body:   raw,
+	}
+
+	if *u.kmsKeyID != "" {
+		u.logger.WithField("kmsKeyID", *u.kmsKeyID).Debug("KMS key is specified")
 		uploadInput.ServerSideEncryption = aws.String("aws:kms")
-		uploadInput.SSEKMSKeyId = u.kmsKeyId
+		uploadInput.SSEKMSKeyId = u.kmsKeyID
 	} else {
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
@@ -126,7 +131,7 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 	return resp.Location, nil
 }
 
-func (u *Uploader) MakeUrl(remotePath *string) string {
+func (u *Uploader) MakeURL(remotePath *string) string {
 	var region *string
 
 	if s3, ok := u.svc.(*s3.S3); ok {
@@ -144,16 +149,11 @@ func (u *Uploader) MakeUrl(remotePath *string) string {
 	return fmt.Sprintf("%s/%s/%s", base, *u.bucketName, *remotePath)
 }
 
-
 func (u *Uploader) FileExists(remotePath *string) bool {
 	_, err := u.svc.HeadObject(&s3.HeadObjectInput{
 		Bucket: u.bucketName,
-		Key: remotePath,
+		Key:    remotePath,
 	})
 
-	if err != nil {
-		return false
-	}
-
-	return true
+	return err == nil
 }

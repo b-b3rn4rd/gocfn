@@ -1,17 +1,18 @@
 package streamer_test
 
 import (
-	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
-	"testing"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/b-b3rn4rd/cfn/pkg/streamer"
-	"github.com/sirupsen/logrus"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/stretchr/testify/assert"
 	"bytes"
-	"github.com/b-b3rn4rd/cfn/pkg/writer"
 	"encoding/json"
+	"testing"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
+	"github.com/b-b3rn4rd/cfn/pkg/streamer"
+	"github.com/b-b3rn4rd/cfn/pkg/writer"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 type mockedCloudFormationAPI struct {
@@ -21,13 +22,13 @@ type mockedCloudFormationAPI struct {
 
 func (m mockedCloudFormationAPI) DescribeStackEventsPages(input *cloudformation.DescribeStackEventsInput, fn func(*cloudformation.DescribeStackEventsOutput, bool) bool) error {
 	fn(&cloudformation.DescribeStackEventsOutput{
-		StackEvents:[]*cloudformation.StackEvent{
+		StackEvents: []*cloudformation.StackEvent{
 			{
 				EventId: aws.String("test1"),
 			},
 			{
 				EventId: aws.String("test2"),
-			},{
+			}, {
 				EventId: aws.String("test3"),
 			},
 		},
@@ -35,15 +36,14 @@ func (m mockedCloudFormationAPI) DescribeStackEventsPages(input *cloudformation.
 	return m.Resp
 }
 
-
-func TestDescribeStackEvents(t *testing.T)  {
+func TestDescribeStackEvents(t *testing.T) {
 	stackName := aws.String("test")
 
-	tests := map[string]struct{
-		Svc cloudformationiface.CloudFormationAPI
-		Err error
+	tests := map[string]struct {
+		Svc        cloudformationiface.CloudFormationAPI
+		Err        error
 		SeenEvents streamer.StackEvents
-		Records streamer.StackEvents
+		Records    streamer.StackEvents
 	}{
 		"Describe stack events return all events if seen is empty": {
 			Svc: mockedCloudFormationAPI{},
@@ -77,8 +77,8 @@ func TestDescribeStackEvents(t *testing.T)  {
 				},
 			},
 		},
-	}	
-	
+	}
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 
@@ -89,19 +89,19 @@ func TestDescribeStackEvents(t *testing.T)  {
 	}
 }
 
-func TestStartStreaming(t *testing.T)  {
+func TestStartStreaming(t *testing.T) {
 	stackName := aws.String("test")
 	wr := &bytes.Buffer{}
-	sw := writer.New(wr, writer.JsonFormatter)
+	sw := writer.New(wr, writer.JSONFormatter)
 	done := make(chan bool, 1)
-	tests := map[string]struct{
-		Svc cloudformationiface.CloudFormationAPI
+	tests := map[string]struct {
+		Svc        cloudformationiface.CloudFormationAPI
 		SeenEvents streamer.StackEvents
-		Records []*cloudformation.StackEvent
-		Err error
+		Records    []*cloudformation.StackEvent
+		Err        error
 	}{
 		"All unseen events are streamed": {
-			Svc:mockedCloudFormationAPI{},
+			Svc: mockedCloudFormationAPI{},
 			SeenEvents: streamer.StackEvents{
 				"test2": &cloudformation.StackEvent{
 					EventId: aws.String("test2"),
@@ -117,7 +117,7 @@ func TestStartStreaming(t *testing.T)  {
 			},
 		},
 		"Returns error if cant describe events": {
-			Svc:mockedCloudFormationAPI{
+			Svc: mockedCloudFormationAPI{
 				Resp: errors.New("Error while describe"),
 			},
 			Err: errors.New("Error while describe"),
@@ -137,7 +137,7 @@ func TestStartStreaming(t *testing.T)  {
 				actual := ""
 				for _, r := range test.Records {
 					raw, _ := json.MarshalIndent(r, "", "    ")
-					actual += string(raw)+"\n"
+					actual += string(raw) + "\n"
 				}
 
 				assert.Equal(t, actual, wr.String())

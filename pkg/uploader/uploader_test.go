@@ -3,29 +3,30 @@ package uploader_test
 import (
 	"testing"
 	//"io"
-	"github.com/stretchr/testify/assert"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/pkg/errors"
-	"github.com/aws/aws-sdk-go/aws"
-	"fmt"
+	"github.com/stretchr/testify/assert"
 )
 
 type mockedS3API struct {
 	s3iface.S3API
 	headObjectResp s3.HeadObjectOutput
-	err error
+	err            error
 }
 
 type mockedUploaderAPI struct {
 	s3manageriface.UploaderAPI
 	uploadResp s3manager.UploadOutput
-	err error
+	err        error
 }
 
 func (m mockedS3API) HeadObject(*s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
@@ -36,7 +37,7 @@ func (m mockedUploaderAPI) Upload(*s3manager.UploadInput, ...func(*s3manager.Upl
 	return &m.uploadResp, m.err
 }
 
-func TestUploader(t *testing.T)  {
+func TestUploader(t *testing.T) {
 	ext := "template"
 	filename := "example-stack.yml"
 	bucket := aws.String("test")
@@ -47,25 +48,24 @@ func TestUploader(t *testing.T)  {
 	fs := afero.NewMemMapFs()
 	afero.WriteFile(fs, filename, []byte(""), 0644)
 
-	tmpUploader := uploader.New(nil,nil,nil,bucket,prefix,nil,nil, fs)
-	fileHash,_ := tmpUploader.FileChecksum(&filename)
+	tmpUploader := uploader.New(nil, nil, nil, bucket, prefix, nil, nil, fs)
+	fileHash, _ := tmpUploader.FileChecksum(&filename)
 	removePath := fmt.Sprintf("%s/%s.%s", *prefix, fileHash, ext)
 
-	url := tmpUploader.MakeUrl(&removePath)
+	url := tmpUploader.MakeURL(&removePath)
 
-	tests := map[string]struct{
-		Svc s3iface.S3API
-		Usvc s3manageriface.UploaderAPI
-		Res string
-		Err error
+	tests := map[string]struct {
+		Svc   s3iface.S3API
+		Usvc  s3manageriface.UploaderAPI
+		Res   string
+		Err   error
 		Setup func()
-
 	}{
 		"New object upload": {
 			Svc: mockedS3API{
 				err: errors.New("file does not exist"),
 			},
-			Usvc: mockedUploaderAPI {
+			Usvc: mockedUploaderAPI{
 				uploadResp: s3manager.UploadOutput{
 					Location: filename,
 				},
@@ -88,7 +88,7 @@ func TestUploader(t *testing.T)  {
 			Svc: mockedS3API{
 				headObjectResp: s3.HeadObjectOutput{},
 			},
-			Usvc: mockedUploaderAPI {
+			Usvc: mockedUploaderAPI{
 				uploadResp: s3manager.UploadOutput{
 					Location: filename,
 				},
@@ -111,6 +111,5 @@ func TestUploader(t *testing.T)  {
 			assert.Equal(t, err, test.Err)
 		})
 	}
-
 
 }

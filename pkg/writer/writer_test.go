@@ -1,13 +1,14 @@
 package writer_test
 
 import (
-	"testing"
-	"io"
-	"github.com/stretchr/testify/assert"
-	"github.com/b-b3rn4rd/cfn/pkg/writer"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"testing"
+
+	"github.com/b-b3rn4rd/cfn/pkg/writer"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWritePassesWriterAndMessageToFormatFunction(t *testing.T) {
@@ -29,11 +30,10 @@ func TestJsonFormatter(t *testing.T) {
 
 	message := struct {
 		Text string
-
 	}{"hello world"}
 
 	expectedMessage, _ := json.MarshalIndent(message, "", "    ")
-	writer.JsonFormatter(out, message)
+	writer.JSONFormatter(out, message)
 
 	assert.Equal(t, out.String(), fmt.Sprintf("%s\n", string(expectedMessage)))
 }

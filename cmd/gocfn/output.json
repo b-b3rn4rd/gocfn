@@ -1,0 +1,46 @@
+{
+    "Capabilities": null,
+    "ChangeSetId": "arn:aws:cloudformation:us-west-2:850534270242:changeSet/gocfn-cloudformation-package-deploy-1521961936/2341ee88-e4ab-4e06-8acf-1251001ffdd8",
+    "CreationTime": "2018-03-01T08:57:19.888Z",
+    "DeletionTime": null,
+    "Description": null,
+    "DisableRollback": false,
+    "EnableTerminationProtection": false,
+    "LastUpdatedTime": "2018-03-25T07:12:52.843Z",
+    "NotificationARNs": null,
+    "Outputs": [
+        {
+            "Description": "Name of S3 bucket to hold website content",
+            "ExportName": null,
+            "OutputKey": "S3BucketSecureURL",
+            "OutputValue": "https://helloza1.s3.amazonaws.com"
+        },
+        {
+            "Description": "URL for website hosted on S3",
+            "ExportName": null,
+            "OutputKey": "WebsiteURL",
+            "OutputValue": "http://helloza1.s3-website-us-west-2.amazonaws.com"
+        }
+    ],
+    "Parameters": [
+        {
+            "ParameterKey": "BucketName",
+            "ParameterValue": "helloza1",
+            "ResolvedValue": null,
+            "UsePreviousValue": null
+        }
+    ],
+    "ParentId": null,
+    "RoleARN": null,
+    "RollbackConfiguration": {
+        "MonitoringTimeInMinutes": null,
+        "RollbackTriggers": null
+    },
+    "RootId": null,
+    "StackId": "arn:aws:cloudformation:us-west-2:850534270242:stack/hello/8c7be0f0-1d2e-11e8-a95e-503aca41a0c5",
+    "StackName": "hello",
+    "StackStatus": "UPDATE_COMPLETE",
+    "StackStatusReason": null,
+    "Tags": null,
+    "TimeoutInMinutes": null
+}
