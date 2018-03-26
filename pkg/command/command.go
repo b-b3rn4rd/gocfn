@@ -25,6 +25,11 @@ type DeployParams struct {
 	ForceDeploy          *bool
 }
 
+type PackageParams struct {
+	S3Uploader   uploader.Uploaderiface
+	TemplateFile *string
+}
+
 func (p *DeployParams) String() string {
 	raw, _ := json.MarshalIndent(*p, "", "    ")
 	return string(raw)
