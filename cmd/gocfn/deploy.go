@@ -1,8 +1,11 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/alecthomas/kingpin"
 	"github.com/b-b3rn4rd/cfn/pkg/cli"
+	"github.com/b-b3rn4rd/cfn/pkg/command"
 )
 
 var (
@@ -23,3 +26,65 @@ var (
 	deployForceDeploy          = deployCommand.Flag("force-deploy", "Force CloudFormation stack deployment if it's in CREATE_FAILED state.").Bool()
 	deployStream               = deployCommand.Flag("stream", "Stream stack events during creation or update process.").Bool()
 )
+
+func (c *Cfn) deploy(deployParams *command.DeployParams) {
+
+	changeSet := c.dplr.CreateChangeSet(deployParams)
+
+	if changeSet.Err != nil {
+		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
+		exiter(1)
+		return
+	}
+
+	changeSetResult := c.dplr.WaitForChangeSet(deployParams.StackName, changeSet.ChangeSet.ChangeSetId)
+	changeSet.ChangeSet = changeSetResult.ChangeSet
+	changeSet.Err = changeSetResult.Err
+
+	if changeSet.Err != nil {
+		isEmptyChangeSet := strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.")
+
+		if !*deployParams.FailOnEmptyChangeset && isEmptyChangeSet {
+			outWriter.Write(c.dplr.DescribeStackUnsafe(deployParams.StackName))
+			return
+		}
+
+		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
+		exiter(1)
+		return
+	}
+
+	if *deployParams.NoExecuteChangeset {
+		outWriter.Write(changeSet.ChangeSet)
+		return
+	}
+
+	if c.stmr != nil {
+		seenStackEvents := c.stmr.DescribeStackEvents(deployParams.StackName, nil)
+		if seenStackEvents.Err != nil {
+			c.logger.WithError(seenStackEvents.Err).Error("Error while gathering stack events")
+			exiter(1)
+			return
+		}
+
+		changeSet.StackEvents = seenStackEvents.Records
+	}
+
+	err := c.dplr.ExecuteChangeset(deployParams.StackName, changeSet.ChangeSet.ChangeSetId)
+
+	if err != nil {
+		c.logger.WithError(err).Error("ChangeSet execution error")
+		exiter(1)
+		return
+	}
+
+	res := c.dplr.WaitForExecute(deployParams.StackName, changeSet, c.stmr)
+
+	if res.Err != nil {
+		c.logger.WithError(res.Err).Error("ChangeSet execution error")
+		exiter(1)
+		return
+	}
+
+	outWriter.Write(res.Stack)
+}

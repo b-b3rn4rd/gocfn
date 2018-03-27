@@ -26,8 +26,9 @@ type DeployParams struct {
 }
 
 type PackageParams struct {
-	S3Uploader   uploader.Uploaderiface
-	TemplateFile *string
+	S3Uploader         uploader.Uploaderiface
+	TemplateFile       *string
+	OutputTemplateFile *string
 }
 
 func (p *DeployParams) String() string {

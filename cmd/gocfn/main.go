@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"strings"
 
 	"github.com/alecthomas/kingpin"
 	"github.com/aws/aws-sdk-go/aws"
@@ -13,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/b-b3rn4rd/cfn/pkg/command"
 	"github.com/b-b3rn4rd/cfn/pkg/deployer"
+	"github.com/b-b3rn4rd/cfn/pkg/packager"
 	"github.com/b-b3rn4rd/cfn/pkg/streamer"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
 	"github.com/b-b3rn4rd/cfn/pkg/writer"
@@ -30,14 +30,20 @@ var (
 
 type Cfn struct {
 	dplr   deployer.Deployeriface
+	pckgr  packager.Packageriface
 	cfnSvc cloudformationiface.CloudFormationAPI
 	logger *logrus.Logger
 	stmr   streamer.Streameriface
 }
 
-func New(dplr deployer.Deployeriface, svc cloudformationiface.CloudFormationAPI, stmr streamer.Streameriface, logger *logrus.Logger) *Cfn {
+func New(dplr deployer.Deployeriface,
+	pckgr packager.Packageriface,
+	svc cloudformationiface.CloudFormationAPI,
+	stmr streamer.Streameriface,
+	logger *logrus.Logger) *Cfn {
 	return &Cfn{
 		dplr:   dplr,
+		pckgr:  pckgr,
 		cfnSvc: svc,
 		logger: logger,
 		stmr:   stmr,
@@ -62,6 +68,7 @@ func main() {
 	cfnSvc := cloudformation.New(sess)
 	s3Svc := s3.New(sess)
 	dplr := deployer.New(cfnSvc, logger)
+	pckgr := packager.New(logger)
 
 	var s3Uploader uploader.Uploaderiface
 	var stmr streamer.Streameriface
@@ -70,7 +77,7 @@ func main() {
 		stmr = streamer.New(cfnSvc, logger)
 	}
 
-	cfn := New(dplr, cfnSvc, stmr, logger)
+	cfn := New(dplr, pckgr, cfnSvc, stmr, logger)
 
 	switch runCommand {
 	case "deploy":
@@ -117,71 +124,10 @@ func main() {
 			)
 		}
 		cfn.packaage(&command.PackageParams{
-			S3Uploader:   s3Uploader,
-			TemplateFile: packageTemplateFile,
+			S3Uploader:         s3Uploader,
+			TemplateFile:       packageTemplateFile,
+			OutputTemplateFile: packageOutputTemplateFile,
 		})
 	}
 
-}
-
-func (c *Cfn) deploy(deployParams *command.DeployParams) {
-
-	changeSet := c.dplr.CreateChangeSet(deployParams)
-
-	if changeSet.Err != nil {
-		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
-		exiter(1)
-		return
-	}
-
-	changeSetResult := c.dplr.WaitForChangeSet(deployParams.StackName, changeSet.ChangeSet.ChangeSetId)
-	changeSet.ChangeSet = changeSetResult.ChangeSet
-	changeSet.Err = changeSetResult.Err
-
-	if changeSet.Err != nil {
-		isEmptyChangeSet := strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.")
-
-		if !*deployParams.FailOnEmptyChangeset && isEmptyChangeSet {
-			outWriter.Write(c.dplr.DescribeStackUnsafe(deployParams.StackName))
-			return
-		}
-
-		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
-		exiter(1)
-		return
-	}
-
-	if *deployParams.NoExecuteChangeset {
-		outWriter.Write(changeSet.ChangeSet)
-		return
-	}
-
-	if c.stmr != nil {
-		seenStackEvents := c.stmr.DescribeStackEvents(deployParams.StackName, nil)
-		if seenStackEvents.Err != nil {
-			c.logger.WithError(seenStackEvents.Err).Error("Error while gathering stack events")
-			exiter(1)
-			return
-		}
-
-		changeSet.StackEvents = seenStackEvents.Records
-	}
-
-	err := c.dplr.ExecuteChangeset(deployParams.StackName, changeSet.ChangeSet.ChangeSetId)
-
-	if err != nil {
-		c.logger.WithError(err).Error("ChangeSet execution error")
-		exiter(1)
-		return
-	}
-
-	res := c.dplr.WaitForExecute(deployParams.StackName, changeSet, c.stmr)
-
-	if res.Err != nil {
-		c.logger.WithError(res.Err).Error("ChangeSet execution error")
-		exiter(1)
-		return
-	}
-
-	outWriter.Write(res.Stack)
 }
