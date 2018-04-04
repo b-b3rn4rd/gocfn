@@ -11,6 +11,7 @@ type Params interface {
 	String() string
 }
 
+// DeployParams parameters required for deploy command
 type DeployParams struct {
 	S3Uploader           uploader.Uploaderiface
 	StackName            *string
@@ -25,6 +26,7 @@ type DeployParams struct {
 	ForceDeploy          *bool
 }
 
+// PackageParams parameters required for package params
 type PackageParams struct {
 	S3Uploader         uploader.Uploaderiface
 	TemplateFile       *string

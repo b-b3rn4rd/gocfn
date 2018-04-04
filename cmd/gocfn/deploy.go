@@ -27,7 +27,7 @@ var (
 	deployStream               = deployCommand.Flag("stream", "Stream stack events during creation or update process.").Bool()
 )
 
-func (c *Cfn) deploy(deployParams *command.DeployParams) {
+func (c *GoCfn) deploy(deployParams *command.DeployParams) {
 
 	changeSet := c.dplr.CreateChangeSet(deployParams)
 
@@ -45,7 +45,7 @@ func (c *Cfn) deploy(deployParams *command.DeployParams) {
 		isEmptyChangeSet := strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.")
 
 		if !*deployParams.FailOnEmptyChangeset && isEmptyChangeSet {
-			outWriter.Write(c.dplr.DescribeStackUnsafe(deployParams.StackName))
+			jsonOutWriter.Write(c.dplr.DescribeStackUnsafe(deployParams.StackName))
 			return
 		}
 
@@ -55,7 +55,7 @@ func (c *Cfn) deploy(deployParams *command.DeployParams) {
 	}
 
 	if *deployParams.NoExecuteChangeset {
-		outWriter.Write(changeSet.ChangeSet)
+		jsonOutWriter.Write(changeSet.ChangeSet)
 		return
 	}
 
@@ -86,5 +86,5 @@ func (c *Cfn) deploy(deployParams *command.DeployParams) {
 		return
 	}
 
-	outWriter.Write(res.Stack)
+	jsonOutWriter.Write(res.Stack)
 }

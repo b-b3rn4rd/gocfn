@@ -7,7 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/b-b3rn4rd/cfn/pkg/command"
@@ -21,32 +20,27 @@ import (
 )
 
 var (
-	version   = "master"
-	debug     = kingpin.Flag("debug", "Enable debug logging.").Short('d').Bool()
-	logger    = logrus.New()
-	outWriter = writer.New(os.Stdout, writer.JSONFormatter)
-	exiter    = os.Exit
+	version       = "master"
+	debug         = kingpin.Flag("debug", "Enable debug logging.").Short('d').Bool()
+	logger        = logrus.New()
+	jsonOutWriter = writer.New(os.Stdout, writer.JSONFormatter)
+	strOutWriter  = writer.New(os.Stdout, writer.PlainFormatter)
+	exiter        = os.Exit
 )
 
-type Cfn struct {
+type GoCfn struct {
 	dplr   deployer.Deployeriface
 	pckgr  packager.Packageriface
-	cfnSvc cloudformationiface.CloudFormationAPI
-	logger *logrus.Logger
 	stmr   streamer.Streameriface
+	logger *logrus.Logger
 }
 
-func New(dplr deployer.Deployeriface,
-	pckgr packager.Packageriface,
-	svc cloudformationiface.CloudFormationAPI,
-	stmr streamer.Streameriface,
-	logger *logrus.Logger) *Cfn {
-	return &Cfn{
+func New(dplr deployer.Deployeriface, pckgr packager.Packageriface, stmr streamer.Streameriface, logger *logrus.Logger) *GoCfn {
+	return &GoCfn{
 		dplr:   dplr,
 		pckgr:  pckgr,
-		cfnSvc: svc,
-		logger: logger,
 		stmr:   stmr,
+		logger: logger,
 	}
 }
 
@@ -68,7 +62,7 @@ func main() {
 	cfnSvc := cloudformation.New(sess)
 	s3Svc := s3.New(sess)
 	dplr := deployer.New(cfnSvc, logger)
-	pckgr := packager.New(logger)
+	pckgr := packager.New(logger, afero.NewOsFs())
 
 	var s3Uploader uploader.Uploaderiface
 	var stmr streamer.Streameriface
@@ -77,7 +71,7 @@ func main() {
 		stmr = streamer.New(cfnSvc, logger)
 	}
 
-	cfn := New(dplr, pckgr, cfnSvc, stmr, logger)
+	cfn := New(dplr, pckgr, stmr, logger)
 
 	switch runCommand {
 	case "deploy":
@@ -95,21 +89,20 @@ func main() {
 			)
 		}
 
-		cfn.deploy(
-			&command.DeployParams{
-				S3Uploader:           s3Uploader,
-				StackName:            deployStackName,
-				TemplateFile:         deployTemplateFile,
-				Parameters:           ([]*cloudformation.Parameter)(*deployParameterOverrides),
-				Capabilities:         aws.StringSlice(*deployCapabilities),
-				NoExecuteChangeset:   deployNoExecuteChangeset,
-				RoleArn:              deployRoleArn,
-				NotificationArns:     aws.StringSlice(*deployNotificationArns),
-				FailOnEmptyChangeset: deployFailOnEmptyChangeset,
-				Tags:                 ([]*cloudformation.Tag)(*deployTags),
-				ForceDeploy:          deployForceDeploy,
-			},
-		)
+		cfn.deploy(&command.DeployParams{
+			S3Uploader:           s3Uploader,
+			StackName:            deployStackName,
+			TemplateFile:         deployTemplateFile,
+			Parameters:           ([]*cloudformation.Parameter)(*deployParameterOverrides),
+			Capabilities:         aws.StringSlice(*deployCapabilities),
+			NoExecuteChangeset:   deployNoExecuteChangeset,
+			RoleArn:              deployRoleArn,
+			NotificationArns:     aws.StringSlice(*deployNotificationArns),
+			FailOnEmptyChangeset: deployFailOnEmptyChangeset,
+			Tags:                 ([]*cloudformation.Tag)(*deployTags),
+			ForceDeploy:          deployForceDeploy,
+		})
+
 	case "package":
 		if *packageS3Bucket != "" {
 			uSvc := s3manager.NewUploaderWithClient(s3Svc)

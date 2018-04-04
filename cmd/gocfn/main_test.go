@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
+	"github.com/b-b3rn4rd/cfn/pkg/command"
 	"github.com/b-b3rn4rd/cfn/pkg/deployer"
+	"github.com/b-b3rn4rd/cfn/pkg/packager"
 	"github.com/b-b3rn4rd/cfn/pkg/streamer"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
 	"github.com/b-b3rn4rd/cfn/pkg/writer"
@@ -15,10 +18,7 @@ import (
 	logrustest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 
-	"encoding/json"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/b-b3rn4rd/cfn/pkg/command"
+	goformation "github.com/awslabs/goformation/cloudformation"
 )
 
 type mockedDeployer struct {
@@ -27,6 +27,12 @@ type mockedDeployer struct {
 	executeChangesetErr     error
 	createChangeSetResp     deployer.ChangeSetRecord
 	describeStackUnsafeResp cloudformation.Stack
+}
+
+type mockerPackager struct {
+	exportResp  *goformation.Template
+	exportErr   error
+	writeOutput error
 }
 
 type mockedStreamer struct {
@@ -67,12 +73,11 @@ func TestDeploy(t *testing.T) {
 
 	}
 
-	var cfnSvc cloudformationiface.CloudFormationAPI
-
 	tests := map[string]struct {
 		// mocks
 		dplr  deployer.Deployeriface
 		strmr streamer.Streameriface
+		pckgr packager.Packageriface
 
 		// params
 		s3Uploader           uploader.Uploaderiface
@@ -285,10 +290,11 @@ func TestDeploy(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			stdOut := &bytes.Buffer{}
-			outWriter = writer.New(stdOut, writer.JSONFormatter)
+			jsonOutWriter = writer.New(stdOut, writer.JSONFormatter)
+			strOutWriter = writer.New(stdOut, writer.JSONFormatter)
 
 			logger, hook := logrustest.NewNullLogger()
-			cfn := New(test.dplr, cfnSvc, test.strmr, logger)
+			cfn := New(test.dplr, test.pckgr, test.strmr, logger)
 			cfn.deploy(&command.DeployParams{
 				test.s3Uploader,
 				test.stackName,

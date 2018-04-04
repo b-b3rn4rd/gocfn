@@ -15,15 +15,16 @@ Resources:
       Handler: main
       Tracing: Active
       Runtime: go1.x
-      CodeUri: ./stack.zip
+      CodeUri:
+        S3Location:
+          Bucket: "hello"
       Timeout: 30
       Policies:
         - AWSLambdaBasicExecutionRole
-        - AmazonDynamoDBFullAccess
         - AWSXrayWriteOnlyAccess
       Tracing: Active
 Outputs:
   FunctionArn:
-    Value: !GetAtt "Function.Arn"
+    Value: !GetAtt Function.Arn
     Export:
       Name: !Sub "${AWS::StackName}-FunctionArn"
