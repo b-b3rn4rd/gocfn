@@ -20,7 +20,6 @@ import (
 
 	"path/filepath"
 
-	"encoding/json"
 	"io/ioutil"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -36,8 +35,11 @@ import (
 type Packageriface interface {
 	Export(*command.PackageParams) (*cloudformation.Template, error)
 	WriteOutput(*string, []byte) error
+	EscapeTags([]byte) []byte
+	NormaliseTags([]byte) []byte
 }
 
+// Packager struct
 type Packager struct {
 	logger *logrus.Logger
 	fs     afero.Fs
@@ -57,20 +59,15 @@ func (p *Packager) Export(packageParams *command.PackageParams) (*cloudformation
 
 	template := &cloudformation.Template{}
 	data, err := ioutil.ReadFile(*packageParams.TemplateFile)
-	yamlwrapper.
-		data, err = yamlwrapper.YAMLToJSON(data)
-	json.Unmarshal(data, template)
-
-	//template, err := goformation.OpenWithOptions(*packageParams.TemplateFile, &intrinsics.ProcessorOptions{
-	//	IntrinsicHandlerOverrides: map[string]intrinsics.IntrinsicHandler{
-	//		"Fn::GetAtt": func(name string, input interface{}, template interface{}) interface{} {
-	//			return fmt.Sprintf("!%s \"%s\"", strings.Replace(name, "Fn::", "", -1), input)
-	//		},
-	//	},
-	//})
 
 	if err != nil {
 		return nil, errors.Wrap(err, "error while opening cfn")
+	}
+
+	err = yamlwrapper.Unmarshal(p.EscapeTags(data), template)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "error while unmarshalling cfn")
 	}
 
 	for resourceID, raw := range template.Resources {
@@ -102,6 +99,22 @@ func (p *Packager) isLocalFile(filepath string) bool {
 
 	_, err := p.fs.Stat(filepath)
 	return err == nil
+}
+
+// EscapeTags escape YAML tags
+func (p *Packager) EscapeTags(data []byte) []byte {
+	r := string(data)
+	r = strings.Replace(r, "!", "\\!", -1)
+
+	return []byte(r)
+}
+
+// NormaliseTags normalise previously escaped tags
+func (p *Packager) NormaliseTags(data []byte) []byte {
+	r := string(data)
+	r = strings.Replace(r, "\\!", "!", -1)
+
+	return []byte(r)
 }
 
 func (p *Packager) isZipFile(filepath string) bool {

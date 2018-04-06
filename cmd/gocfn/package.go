@@ -20,6 +20,10 @@ var (
 func (c *GoCfn) packaage(packageParams *command.PackageParams) {
 	template, err := c.pckgr.Export(packageParams)
 
+	if err != nil {
+		c.logger.WithError(err).Error("error while exporting package")
+	}
+
 	var raw []byte
 
 	if *packageUseJSON {
@@ -29,10 +33,12 @@ func (c *GoCfn) packaage(packageParams *command.PackageParams) {
 	}
 
 	if err != nil {
-		c.logger.WithError(err).Error("error while exporting package")
+		c.logger.WithError(err).Error("error while converting template")
 		exiter(1)
 		return
 	}
+
+	raw = c.pckgr.NormaliseTags(raw)
 
 	if *packageParams.OutputTemplateFile == "" {
 		c.logger.Debug("output file is not specified, sending to stdout")
