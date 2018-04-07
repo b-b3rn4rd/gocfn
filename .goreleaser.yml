@@ -1,5 +1,5 @@
 build:
-  main: cmd/cfn/main.go
+  main: cmd/gocfn/main.go
   binary: gocfn
   goos:
     - darwin

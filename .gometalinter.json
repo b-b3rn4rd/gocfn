@@ -18,6 +18,11 @@
     "unused",
     "vet"
   ],
+  "Exclude": [
+    "pkg/deployer/deployer_test.go",
+    "pkg/packager/packager_test.go",
+    "cmd/gocfn/main_test.go"
+  ],
   "Cyclo": 20,
   "LineLength": 220
 }

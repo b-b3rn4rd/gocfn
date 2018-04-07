@@ -8,8 +8,6 @@ import (
 	"io/ioutil"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/awslabs/goformation"
-	"github.com/awslabs/goformation/cloudformation"
 	"github.com/b-b3rn4rd/cfn/pkg/packager"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
 	"github.com/pkg/errors"
@@ -32,7 +30,7 @@ func (u *mockedS3Uploader) UploadWithDedup(filename *string, extension string) (
 func TestExport(t *testing.T) {
 	tests := map[string]struct {
 		packageParams       *command.PackageParams
-		exportResp          *cloudformation.Template
+		exportResp          *packager.Template
 		exportErr           error
 		uploadWithDedupResp string
 		uploadWithDedupErr  error
@@ -42,11 +40,14 @@ func TestExport(t *testing.T) {
 				TemplateFile: aws.String("testdata/stack_with_local_file.yml"),
 			},
 			uploadWithDedupResp: "s3://hello/abc.zip",
-			exportResp: func() *cloudformation.Template {
-				template, _ := goformation.Open("testdata/stack_with_local_file.yml")
+			exportResp: func() *packager.Template {
+				logger, _ := test2.NewNullLogger()
+
+				pkgr := packager.New(logger, afero.NewOsFs())
+				template, _ := pkgr.Open("testdata/stack_with_local_file.yml")
 				resource, _ := template.GetAWSServerlessFunctionWithName("Function")
 				resource.CodeUri.String = aws.String("s3://hello/abc.zip")
-				template.Resources["Function"] = resource
+				template.Resources["Function"] = &resource
 
 				return template
 			}(),
@@ -56,8 +57,11 @@ func TestExport(t *testing.T) {
 				TemplateFile: aws.String("testdata/stack_with_s3_url.yml"),
 			},
 			uploadWithDedupResp: "not called",
-			exportResp: func() *cloudformation.Template {
-				template, _ := goformation.Open("testdata/stack_with_s3_url.yml")
+			exportResp: func() *packager.Template {
+				logger, _ := test2.NewNullLogger()
+
+				pkgr := packager.New(logger, afero.NewOsFs())
+				template, _ := pkgr.Open("testdata/stack_with_s3_url.yml")
 				return template
 			}(),
 		},
@@ -66,8 +70,12 @@ func TestExport(t *testing.T) {
 				TemplateFile: aws.String("testdata/stack_invalid.yml"),
 			},
 			uploadWithDedupResp: "not called",
-			exportResp: func() *cloudformation.Template {
-				template, _ := goformation.Open("testdata/stack_invalid.yml")
+			exportResp: func() *packager.Template {
+				logger, _ := test2.NewNullLogger()
+
+				pkgr := packager.New(logger, afero.NewOsFs())
+				template, _ := pkgr.Open("testdata/stack_invalid.yml")
+
 				return template
 			}(),
 		},
@@ -83,11 +91,15 @@ func TestExport(t *testing.T) {
 				TemplateFile: aws.String("testdata/stack_with_zip.yml"),
 			},
 			uploadWithDedupResp: "s3://hello/zipped.zip",
-			exportResp: func() *cloudformation.Template {
-				template, _ := goformation.Open("testdata/stack_with_local_file.yml")
+			exportResp: func() *packager.Template {
+				logger, _ := test2.NewNullLogger()
+
+				pkgr := packager.New(logger, afero.NewOsFs())
+
+				template, _ := pkgr.Open("testdata/stack_with_local_file.yml")
 				resource, _ := template.GetAWSServerlessFunctionWithName("Function")
 				resource.CodeUri.String = aws.String("s3://hello/zipped.zip")
-				template.Resources["Function"] = resource
+				template.Resources["Function"] = &resource
 
 				return template
 			}(),

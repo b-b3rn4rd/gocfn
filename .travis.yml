@@ -1,14 +1,3 @@
 language: go
 go:
-    - 1.10
-
-go_import_path: github.com/b-b3rn4rd/gocfn
-
-install:
-    - echo noop
-
-env:
-    - "PATH=/home/travis/gopath/bin:$PATH"
-
-script:
-    - make ci
+  - "1.10"

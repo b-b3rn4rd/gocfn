@@ -22,21 +22,29 @@ import (
 
 	"io/ioutil"
 
+	"encoding/json"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/awslabs/goformation/cloudformation"
 	"github.com/b-b3rn4rd/cfn/pkg/command"
 	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
-	yamlwrapper "github.com/sanathkr/yaml"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
 type Packageriface interface {
-	Export(*command.PackageParams) (*cloudformation.Template, error)
+	Export(*command.PackageParams) (*Template, error)
 	WriteOutput(*string, []byte) error
-	EscapeTags([]byte) []byte
-	NormaliseTags([]byte) []byte
+	Marshall(string, *Template) ([]byte, error)
+	Open(string) (*Template, error)
+}
+
+// Template struct
+type Template struct {
+	Transform string `json:"Transform,omitempty"`
+	cloudformation.Template
 }
 
 // Packager struct
@@ -54,20 +62,11 @@ func New(logger *logrus.Logger, fs afero.Fs) *Packager {
 }
 
 // Export upload code for specific resources and modify template
-func (p *Packager) Export(packageParams *command.PackageParams) (*cloudformation.Template, error) {
-	p.logger.WithField("templateFile", *packageParams.TemplateFile).Debug("opening cfn template")
-
-	template := &cloudformation.Template{}
-	data, err := ioutil.ReadFile(*packageParams.TemplateFile)
+func (p *Packager) Export(packageParams *command.PackageParams) (*Template, error) {
+	template, err := p.Open(*packageParams.TemplateFile)
 
 	if err != nil {
-		return nil, errors.Wrap(err, "error while opening cfn")
-	}
-
-	err = yamlwrapper.Unmarshal(p.EscapeTags(data), template)
-
-	if err != nil {
-		return nil, errors.Wrap(err, "error while unmarshalling cfn")
+		return nil, err
 	}
 
 	for resourceID, raw := range template.Resources {
@@ -76,6 +75,10 @@ func (p *Packager) Export(packageParams *command.PackageParams) (*cloudformation
 		switch untyped["Type"] {
 		case "AWS::Serverless::Function":
 			resource, err := template.GetAWSServerlessFunctionWithName(resourceID)
+
+			if err != nil {
+				return nil, errors.Wrap(err, "error while searching for serverless func")
+			}
 
 			s3URL, err := p.exportAWSServerlessFunction(packageParams.S3Uploader, resource)
 
@@ -101,16 +104,14 @@ func (p *Packager) isLocalFile(filepath string) bool {
 	return err == nil
 }
 
-// EscapeTags escape YAML tags
-func (p *Packager) EscapeTags(data []byte) []byte {
+func (p *Packager) escapeTags(data []byte) []byte {
 	r := string(data)
 	r = strings.Replace(r, "!", "\\!", -1)
 
 	return []byte(r)
 }
 
-// NormaliseTags normalise previously escaped tags
-func (p *Packager) NormaliseTags(data []byte) []byte {
+func (p *Packager) normaliseTags(data []byte) []byte {
 	r := string(data)
 	r = strings.Replace(r, "\\!", "!", -1)
 
@@ -149,6 +150,58 @@ func (p *Packager) isS3URL(rawURL string) bool {
 	}
 
 	return strings.ToLower(url.Scheme) == "s3"
+}
+
+func (p *Packager) Marshall(filename string, template *Template) ([]byte, error) {
+	var raw []byte
+	var err error
+
+	isYaml := p.isYAML(filename)
+
+	if isYaml {
+		p.logger.WithField("filename", filename).Debug("file is yaml, converting to yaml")
+		raw, err = yaml.Marshal(template)
+	} else {
+		p.logger.WithField("filename", filename).Debug("file is json, converting to json")
+		raw, err = json.MarshalIndent(template, "", " ")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if isYaml {
+		p.logger.WithField("filename", filename).Debug("file is yaml, normalise tags")
+		raw = p.normaliseTags(raw)
+	}
+
+	return raw, nil
+}
+
+func (p *Packager) Open(filename string) (*Template, error) {
+	p.logger.WithField("templateFile", filename).Debug("opening cfn template")
+
+	data, err := ioutil.ReadFile(filename)
+
+	if err != nil {
+		return nil, errors.Wrap(err, "error while opening cfn")
+	}
+
+	if p.isYAML(filename) {
+		data, err = yaml.YAMLToJSON(p.escapeTags(data))
+
+		if err != nil {
+			return nil, errors.Wrap(err, "error while converting yaml to json")
+		}
+	}
+
+	template := &Template{}
+
+	if err := json.Unmarshal(data, template); err != nil {
+		return nil, errors.Wrap(err, "error while unmarshalling cfn")
+	}
+
+	return template, nil
 }
 
 func (p *Packager) exportAWSServerlessFunction(s3uploader uploader.Uploaderiface, resource cloudformation.AWSServerlessFunction) (string, error) {
@@ -295,4 +348,10 @@ func (p *Packager) WriteOutput(outputTemplateFile *string, data []byte) error {
 	}
 
 	return err
+}
+
+func (p *Packager) isYAML(filename string) bool {
+	ext := filepath.Ext(filename)
+
+	return strings.ToLower(ext) == ".yaml" || strings.ToLower(ext) == ".yml"
 }

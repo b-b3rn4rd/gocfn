@@ -26,7 +26,8 @@ There are three ways to install `gocfn`
 `brew install gocfn`
 
 *Using go get*
-go get github.com/b-b3rn4rd/gocfn
+
+`go get github.com/b-b3rn4rd/gocfn`
 
 
 *Manually*

@@ -17,8 +17,6 @@ import (
 	"github.com/sirupsen/logrus"
 	logrustest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
-
-	goformation "github.com/awslabs/goformation/cloudformation"
 )
 
 type mockedDeployer struct {
@@ -30,9 +28,29 @@ type mockedDeployer struct {
 }
 
 type mockerPackager struct {
-	exportResp  *goformation.Template
-	exportErr   error
-	writeOutput error
+	exportResp     *packager.Template
+	exportErr      error
+	openResp       *packager.Template
+	opentErr       error
+	writeOutputErr error
+	marshallResp   []byte
+	marshallErr    error
+}
+
+func (p mockerPackager) Export(packageParams *command.PackageParams) (*packager.Template, error) {
+	return p.exportResp, p.exportErr
+}
+
+func (p mockerPackager) Open(filename string) (*packager.Template, error) {
+	return p.openResp, p.opentErr
+}
+
+func (p mockerPackager) Marshall(filename string, template *packager.Template) ([]byte, error) {
+	return p.marshallResp, p.marshallErr
+}
+
+func (p mockerPackager) WriteOutput(outputTemplateFile *string, data []byte) error {
+	return p.writeOutputErr
 }
 
 type mockedStreamer struct {
@@ -315,6 +333,40 @@ func TestDeploy(t *testing.T) {
 			}
 
 			assert.Equal(t, test.stdOut, stdOut.String())
+		})
+	}
+}
+
+func TestPackage(t *testing.T) {
+	tests := map[string]struct {
+		packageParams  *command.PackageParams
+		exportResp     *packager.Template
+		exportErr      error
+		writeOutputErr error
+		marshallResp   []byte
+		marshallErr    error
+	}{
+		"exits with error with Export has error": {
+			exportErr: errors.New("error"),
+			packageParams: &command.PackageParams{
+				TemplateFile: aws.String("example.yml"),
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			pkgr := &mockerPackager{
+				exportErr: test.exportErr,
+			}
+
+			logger, hook := logrustest.NewNullLogger()
+			cfn := New(nil, pkgr, nil, logger)
+			cfn.packaage(test.packageParams)
+
+			if hook.LastEntry() != nil {
+				assert.Equal(t, logrus.ErrorLevel, hook.LastEntry().Level)
+			}
 		})
 	}
 }

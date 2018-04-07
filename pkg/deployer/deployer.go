@@ -56,7 +56,7 @@ func New(svc cloudformationiface.CloudFormationAPI, logger *logrus.Logger) *Depl
 	}
 }
 
-func (s *Deployer) hasStack(stackName *string) (bool, error, *cloudformation.Stack) {
+func (s *Deployer) hasStack(stackName *string) (bool, *cloudformation.Stack, error) {
 	s.logger.WithField("stackName", *stackName).Debug("Checking if stack exists")
 
 	resp, err := s.svc.DescribeStacks(&cloudformation.DescribeStacksInput{
@@ -69,7 +69,7 @@ func (s *Deployer) hasStack(stackName *string) (bool, error, *cloudformation.Sta
 			return false, nil, nil
 		}
 
-		return false, errors.Wrap(err, "AWS error while running DescribeStack"), nil
+		return false, nil, errors.Wrap(err, "AWS error while running DescribeStack")
 	}
 
 	if len(resp.Stacks) == 0 {
@@ -86,7 +86,7 @@ func (s *Deployer) hasStack(stackName *string) (bool, error, *cloudformation.Sta
 
 	s.logger.WithField("stackName", *stackName).Debug(fmt.Sprintf("Stack exist with status %s", *resp.Stacks[0].StackStatus))
 
-	return true, nil, resp.Stacks[0]
+	return true, resp.Stacks[0], nil
 }
 
 func (s *Deployer) createChangeSet(deployParams *command.DeployParams) (res *ChangeSetRecord) {
@@ -107,7 +107,7 @@ func (s *Deployer) createChangeSet(deployParams *command.DeployParams) (res *Cha
 		Description:   aws.String(description),
 	}
 
-	hasStack, err, stack := s.hasStack(deployParams.StackName)
+	hasStack, stack, err := s.hasStack(deployParams.StackName)
 
 	if err != nil {
 		res.Err = err
