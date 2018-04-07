@@ -3,7 +3,7 @@
 ci: install lint test
 
 install:
-	go get -t ./...
+	go get -t ./cmd/gocfn
 	go get -u gopkg.in/alecthomas/gometalinter.v2
 	gometalinter.v2 --install
 	go get github.com/axw/gocov/...
