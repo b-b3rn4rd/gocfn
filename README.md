@@ -1,4 +1,4 @@
-*GOCFN* - cloudformation package and deploy commands in Golang
+[![Go Report Card](https://goreportcard.com/badge/github.com/b-b3rn4rd/gocfn)](https://goreportcard.com/report/github.com/b-b3rn4rd/gocfn)  [![Build Status](https://travis-ci.org/b-b3rn4rd/gocfn.svg?branch=master)](https://travis-ci.org/b-b3rn4rd/gocfn) *GOCFN* - cloudformation package and deploy commands in Golang
 ==================
 Following library re-implements existing functionality in `aws cloudformation package` and `aws cloudformation deploy` and provides additional features that are not available in the standard `aws cli`
 
