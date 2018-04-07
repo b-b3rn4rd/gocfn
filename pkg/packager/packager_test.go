@@ -3,13 +3,13 @@ package packager_test
 import (
 	"testing"
 
-	"github.com/b-b3rn4rd/cfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/command"
 
 	"io/ioutil"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/b-b3rn4rd/cfn/pkg/packager"
-	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/b-b3rn4rd/gocfn/pkg/packager"
+	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	test2 "github.com/sirupsen/logrus/hooks/test"

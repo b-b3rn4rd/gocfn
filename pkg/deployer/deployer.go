@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
-	"github.com/b-b3rn4rd/cfn/pkg/streamer"
-	"github.com/b-b3rn4rd/cfn/pkg/writer"
+	"github.com/b-b3rn4rd/gocfn/pkg/streamer"
+	"github.com/b-b3rn4rd/gocfn/pkg/writer"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	//"sync"
@@ -19,7 +19,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/b-b3rn4rd/cfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/command"
 )
 
 type Deployeriface interface {

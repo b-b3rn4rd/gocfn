@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
 )
 
 type Params interface {

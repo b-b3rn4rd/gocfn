@@ -26,8 +26,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/awslabs/goformation/cloudformation"
-	"github.com/b-b3rn4rd/cfn/pkg/command"
-	"github.com/b-b3rn4rd/cfn/pkg/uploader"
+	"github.com/b-b3rn4rd/gocfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -179,12 +179,12 @@ func (p *Packager) Marshall(filename string, template *Template) ([]byte, error)
 }
 
 func (p *Packager) Open(filename string) (*Template, error) {
-	p.logger.WithField("templateFile", filename).Debug("opening cfn template")
+	p.logger.WithField("templateFile", filename).Debug("opening gocfn template")
 
 	data, err := ioutil.ReadFile(filename)
 
 	if err != nil {
-		return nil, errors.Wrap(err, "error while opening cfn")
+		return nil, errors.Wrap(err, "error while opening gocfn")
 	}
 
 	if p.isYAML(filename) {
@@ -198,7 +198,7 @@ func (p *Packager) Open(filename string) (*Template, error) {
 	template := &Template{}
 
 	if err := json.Unmarshal(data, template); err != nil {
-		return nil, errors.Wrap(err, "error while unmarshalling cfn")
+		return nil, errors.Wrap(err, "error while unmarshalling gocfn")
 	}
 
 	return template, nil

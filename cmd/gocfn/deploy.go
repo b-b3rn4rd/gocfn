@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin"
-	"github.com/b-b3rn4rd/cfn/pkg/cli"
-	"github.com/b-b3rn4rd/cfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/cli"
+	"github.com/b-b3rn4rd/gocfn/pkg/command"
 )
 
 var (

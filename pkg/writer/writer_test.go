@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/b-b3rn4rd/cfn/pkg/writer"
+	"github.com/b-b3rn4rd/gocfn/pkg/writer"
 	"github.com/stretchr/testify/assert"
 )
 

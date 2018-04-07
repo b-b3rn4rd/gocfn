@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/b-b3rn4rd/cfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/command"
 	"github.com/stretchr/testify/assert"
 )
 
