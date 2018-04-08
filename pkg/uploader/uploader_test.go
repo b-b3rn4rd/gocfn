@@ -37,6 +37,27 @@ func (m mockedUploaderAPI) Upload(*s3manager.UploadInput, ...func(*s3manager.Upl
 	return &m.uploadResp, m.err
 }
 
+func TestUrlTos3Path(t *testing.T) {
+	tests := map[string]struct {
+		url      string
+		expected string
+	}{
+		"url to s3": {
+			url:      "http://example.com/bucketname/sam/filename.zip",
+			expected: "s3://bucketname/sam/filename.zip",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			tmpUploader := uploader.New(nil, nil, nil, nil, nil, nil, nil, nil)
+			res, _ := tmpUploader.UrlTos3Path(test.url)
+
+			assert.Equal(t, test.expected, res)
+		})
+	}
+}
+
 func TestUploader(t *testing.T) {
 	ext := "template"
 	filename := "example-stack.yml"

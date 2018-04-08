@@ -55,9 +55,9 @@ func main() {
 
 	logger.Formatter = &logrus.JSONFormatter{}
 
-	sess, _ := session.NewSession(&aws.Config{
-		Region: aws.String("us-west-2")},
-	)
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	}))
 
 	cfnSvc := cloudformation.New(sess)
 	s3Svc := s3.New(sess)

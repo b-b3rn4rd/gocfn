@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"io"
 
+	"net/url"
+
+	"strings"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -20,6 +24,7 @@ type Uploaderiface interface {
 	FileExists(*string) bool
 	FileChecksum(*string) (string, error)
 	MakeURL(*string) string
+	UrlTos3Path(string) (string, error)
 }
 
 type Uploader struct {
@@ -63,6 +68,16 @@ func (u *Uploader) FileChecksum(filename *string) (string, error) {
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func (u *Uploader) UrlTos3Path(s3Url string) (string, error) {
+	url, err := url.Parse(s3Url)
+
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("s3://%s", strings.Trim(url.Path, "/")), err
 }
 
 func (u *Uploader) UploadWithDedup(filename *string, extension string) (string, error) {

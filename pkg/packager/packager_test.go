@@ -21,10 +21,16 @@ type mockedS3Uploader struct {
 	uploader.Uploaderiface
 	uploadWithDedupResp string
 	uploadWithDedupErr  error
+	urlTos3PathResp     string
+	urlTos3PathErr      error
 }
 
 func (u *mockedS3Uploader) UploadWithDedup(filename *string, extension string) (string, error) {
 	return u.uploadWithDedupResp, u.uploadWithDedupErr
+}
+
+func (u *mockedS3Uploader) UrlTos3Path(url string) (string, error) {
+	return u.urlTos3PathResp, u.urlTos3PathErr
 }
 
 func TestExport(t *testing.T) {
@@ -34,12 +40,15 @@ func TestExport(t *testing.T) {
 		exportErr           error
 		uploadWithDedupResp string
 		uploadWithDedupErr  error
+		urlTos3PathResp     string
+		urlTos3PathErr      error
 	}{
 		"export uploads local file to s3 and modify CodeUri": {
 			packageParams: &command.PackageParams{
 				TemplateFile: aws.String("testdata/stack_with_local_file.yml"),
 			},
-			uploadWithDedupResp: "s3://hello/abc.zip",
+			uploadWithDedupResp: "http://example.com/hello/abc.zip",
+			urlTos3PathResp:     "s3://hello/abc.zip",
 			exportResp: func() *packager.Template {
 				logger, _ := test2.NewNullLogger()
 
@@ -57,6 +66,7 @@ func TestExport(t *testing.T) {
 				TemplateFile: aws.String("testdata/stack_with_s3_url.yml"),
 			},
 			uploadWithDedupResp: "not called",
+			urlTos3PathResp:     "not called",
 			exportResp: func() *packager.Template {
 				logger, _ := test2.NewNullLogger()
 
@@ -70,6 +80,7 @@ func TestExport(t *testing.T) {
 				TemplateFile: aws.String("testdata/stack_invalid.yml"),
 			},
 			uploadWithDedupResp: "not called",
+			urlTos3PathResp:     "not called",
 			exportResp: func() *packager.Template {
 				logger, _ := test2.NewNullLogger()
 
@@ -90,7 +101,8 @@ func TestExport(t *testing.T) {
 			packageParams: &command.PackageParams{
 				TemplateFile: aws.String("testdata/stack_with_zip.yml"),
 			},
-			uploadWithDedupResp: "s3://hello/zipped.zip",
+			uploadWithDedupResp: "http://example.com/hello/zipped.zip",
+			urlTos3PathResp:     "s3://hello/zipped.zip",
 			exportResp: func() *packager.Template {
 				logger, _ := test2.NewNullLogger()
 
@@ -116,6 +128,7 @@ func TestExport(t *testing.T) {
 			params.S3Uploader = &mockedS3Uploader{
 				uploadWithDedupResp: test.uploadWithDedupResp,
 				uploadWithDedupErr:  test.uploadWithDedupErr,
+				urlTos3PathResp:     test.urlTos3PathResp,
 			}
 
 			res, err := pkgr.Export(params)
