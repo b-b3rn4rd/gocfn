@@ -35,7 +35,7 @@ There are three ways to install `gocfn`
 Download and install a binary the releases page.
 
 
-Usage
+Deploy Usage
 ------------------
 *gocfn deploy* - provides identical parameters to `aws cloudformation deploy` and can be transparently substitute it.
 
@@ -601,6 +601,8 @@ $ gocfn deploy --name hello --parameter-overrides "BucketName=helloza123" --temp
 ```
 </details>
 
+Package Usage
+------------------
 *gocfn package* - provides similar parameters to `aws cloudformation package` with temporary minor differences.
 
 Differences:
@@ -626,6 +628,9 @@ Flags:
       --s3-prefix=S3-PREFIX    A prefix name that the command adds to the artifacts name when it uploads them to the S3 bucket.
       --kms-key-id=KMS-KEY-ID  The ID of an AWS KMS key that the command uses to encrypt artifacts that are at rest in the S3 bucket.
 ```
+
+Examples
+------------
 
 <details>
 <summary>Package local artifacts and send create output stack file</summary>
