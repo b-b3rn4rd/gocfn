@@ -600,3 +600,36 @@ $ gocfn deploy --name hello --parameter-overrides "BucketName=helloza123" --temp
 }
 ```
 
+*gocfn package* - provides similar parameters to `aws cloudformation package` with temporary minor differences.
+
+Differences:
+* `--use-json` option is not available yet, because currently there is no way to transform YAML user tags
+* command can only upload artifacts for `CodeUri` property for the `AWS::Serverless::Function` resource, just because it's the only resource I currently use
+
+```bash
+gocfn package --help
+usage: gocfn package --template-file=TEMPLATE-FILE --s3-bucket=S3-BUCKET [<flags>]
+
+Packages the local artifacts (local paths) that your AWS CloudFormation template references.
+
+Flags:
+      --help                   Show context-sensitive help (also try --help-long and --help-man).
+  -d, --debug                  Enable debug logging.
+      --version                Show application version.
+      --template-file=TEMPLATE-FILE  
+                               The path where your AWS CloudFormation template is located.
+      --output-template-file=OUTPUT-TEMPLATE-FILE  
+                               The path to the file where the command writes the output AWS CloudFormation template.
+      --s3-bucket=S3-BUCKET    The name of the S3 bucket where this command uploads your CloudFormation template.
+      --force-upload           Indicates whether to override existing files in the S3 bucket.
+      --s3-prefix=S3-PREFIX    A prefix name that the command adds to the artifacts name when it uploads them to the S3 bucket.
+      --kms-key-id=KMS-KEY-ID  The ID of an AWS KMS key that the command uses to encrypt artifacts that are at rest in the S3 bucket.
+```
+
+<section>
+<summary>Package local artifacts and send create output stack file</summary>
+
+```bash
+gocfn  package --template-file stack.yml --output-template-file stack.out.yml --s3-bucket=example-bucket-name
+```
+</section>

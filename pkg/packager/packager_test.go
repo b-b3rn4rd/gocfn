@@ -29,7 +29,7 @@ func (u *mockedS3Uploader) UploadWithDedup(filename *string, extension string) (
 	return u.uploadWithDedupResp, u.uploadWithDedupErr
 }
 
-func (u *mockedS3Uploader) UrlTos3Path(url string) (string, error) {
+func (u *mockedS3Uploader) URLTos3Path(url string) (string, error) {
 	return u.urlTos3PathResp, u.urlTos3PathErr
 }
 
