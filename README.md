@@ -599,7 +599,7 @@ $ gocfn deploy --name hello --parameter-overrides "BucketName=helloza123" --temp
     "TimeoutInMinutes": null
 }
 ```
-</section>
+</details>
 
 *gocfn package* - provides similar parameters to `aws cloudformation package` with temporary minor differences.
 
@@ -627,10 +627,10 @@ Flags:
       --kms-key-id=KMS-KEY-ID  The ID of an AWS KMS key that the command uses to encrypt artifacts that are at rest in the S3 bucket.
 ```
 
-<section>
+<details>
 <summary>Package local artifacts and send create output stack file</summary>
 
 ```bash
 gocfn  package --template-file stack.yml --output-template-file stack.out.yml --s3-bucket=example-bucket-name
 ```
-</section>
+</details>
