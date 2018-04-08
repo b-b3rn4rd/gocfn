@@ -599,6 +599,7 @@ $ gocfn deploy --name hello --parameter-overrides "BucketName=helloza123" --temp
     "TimeoutInMinutes": null
 }
 ```
+</section>
 
 *gocfn package* - provides similar parameters to `aws cloudformation package` with temporary minor differences.
 
