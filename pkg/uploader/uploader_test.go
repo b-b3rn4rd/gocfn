@@ -51,7 +51,7 @@ func TestUrlTos3Path(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			tmpUploader := uploader.New(nil, nil, nil, nil, nil, nil, nil, nil)
-			res, _ := tmpUploader.UrlTos3Path(test.url)
+			res, _ := tmpUploader.URLTos3Path(test.url)
 
 			assert.Equal(t, test.expected, res)
 		})

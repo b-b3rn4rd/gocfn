@@ -241,7 +241,7 @@ func (p *Packager) exportAWSServerlessFunction(s3uploader uploader.Uploaderiface
 			return "", errors.Wrap(err, "error while uploading code")
 		}
 
-		s3Url, _ = s3uploader.UrlTos3Path(s3Url)
+		s3Url, _ = s3uploader.URLTos3Path(s3Url)
 
 		p.logger.WithField("s3url", s3Url).Debug("zip was uploaded to s3")
 

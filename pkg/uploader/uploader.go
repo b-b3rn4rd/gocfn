@@ -24,7 +24,7 @@ type Uploaderiface interface {
 	FileExists(*string) bool
 	FileChecksum(*string) (string, error)
 	MakeURL(*string) string
-	UrlTos3Path(string) (string, error)
+	URLTos3Path(string) (string, error)
 }
 
 type Uploader struct {
@@ -70,7 +70,7 @@ func (u *Uploader) FileChecksum(filename *string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-func (u *Uploader) UrlTos3Path(s3Url string) (string, error) {
+func (u *Uploader) URLTos3Path(s3Url string) (string, error) {
 	url, err := url.Parse(s3Url)
 
 	if err != nil {
