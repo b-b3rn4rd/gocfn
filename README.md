@@ -23,7 +23,10 @@ There are three ways to install `gocfn`
 
 *Using homebrew*
 
-`brew install gocfn`
+```bash
+brew tap b-b3rn4rd/homebrew-tap
+brew install gocfn
+```
 
 *Using go get*
 
