@@ -7,3 +7,8 @@ build:
     - windows
   goarch:
     - amd64
+brew:
+  github:
+    owner: b-b3rn4rd
+    name: homebrew-tap
+  folder: Formula
