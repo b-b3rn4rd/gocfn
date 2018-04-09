@@ -9,6 +9,8 @@ import (
 
 	"strings"
 
+	"sync/atomic"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -36,6 +38,31 @@ type Uploader struct {
 	kmsKeyID    *string
 	forceUpload *bool
 	appFs       afero.Fs
+}
+
+type CustomReader struct {
+	fp   afero.File
+	size int64
+	read int64
+}
+
+func (r *CustomReader) Read(p []byte) (int, error) {
+	return r.fp.Read(p)
+}
+
+func (r *CustomReader) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.fp.ReadAt(p, off)
+	if err != nil {
+		return n, err
+	}
+
+	atomic.AddInt64(&r.read, int64(n))
+	fmt.Println(fmt.Sprintf("Uploading %s %d / %d  (%d%%)", r.fp.Name(), r.read/2, r.size, int(float32(r.read*100/2)/float32(r.size))))
+	return n, err
+}
+
+func (r *CustomReader) Seek(offset int64, whence int) (int64, error) {
+	return r.fp.Seek(offset, whence)
 }
 
 func New(svc s3iface.S3API, uSvc s3manageriface.UploaderAPI, logger *logrus.Logger, bucketName *string, prefix *string, kmsKeyID *string, forceUpload *bool, fs afero.Fs) *Uploader {
@@ -122,10 +149,17 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 		return "", errors.Wrap(err, "Error while opening filename")
 	}
 
+	rawInfo, err := raw.Stat()
+
+	reader := &CustomReader{
+		fp:   raw,
+		size: rawInfo.Size(),
+	}
+
 	uploadInput := &s3manager.UploadInput{
 		Bucket: u.bucketName,
 		Key:    remotePath,
-		Body:   raw,
+		Body:   reader,
 	}
 
 	if *u.kmsKeyID != "" {

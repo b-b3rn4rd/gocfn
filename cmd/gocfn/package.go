@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/alecthomas/kingpin"
 	"github.com/b-b3rn4rd/gocfn/pkg/command"
 )
@@ -46,4 +48,11 @@ func (c *GoCfn) packaage(packageParams *command.PackageParams) {
 		exiter(1)
 		return
 	}
+
+	strOutWriter.Write(fmt.Sprintf(`
+Successfully packaged artifacts and wrote output template to file %s"
+Execute the following command to deploy the packaged template"
+"gocfn deploy --template-file %s --name <YOUR STACK NAME>"`,
+		*packageParams.OutputTemplateFile, *packageParams.OutputTemplateFile),
+	)
 }
