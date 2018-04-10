@@ -11,6 +11,8 @@ import (
 
 	"sync/atomic"
 
+	"os"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -57,7 +59,8 @@ func (r *CustomReader) ReadAt(p []byte, off int64) (int, error) {
 	}
 
 	atomic.AddInt64(&r.read, int64(n))
-	fmt.Println(fmt.Sprintf("Uploading %s %d / %d  (%d%%)", r.fp.Name(), r.read/2, r.size, int(float32(r.read*100/2)/float32(r.size))))
+	fmt.Fprintf(os.Stderr, "Uploading %s %d / %d  (%d%%)\n", r.fp.Name(), r.read/2, r.size, int(float32(r.read*100/2)/float32(r.size)))
+
 	return n, err
 }
 

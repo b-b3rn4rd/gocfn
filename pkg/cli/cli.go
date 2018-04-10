@@ -13,7 +13,6 @@ import (
 
 type CFNParametersValue []*cloudformation.Parameter
 type CFNTagsValue []*cloudformation.Tag
-type KeyValValue map[string]string
 
 func (h *CFNParametersValue) Set(value string) error {
 	var r = regexp.MustCompile(`(\w+)=(\w+)`)
@@ -70,29 +69,5 @@ func (h *CFNTagsValue) String() string {
 func CFNTags(s kingpin.Settings) (target *CFNTagsValue) {
 	target = &CFNTagsValue{}
 	s.SetValue(target)
-	return
-}
-
-func (m *KeyValValue) Set(value string) error {
-	var r = regexp.MustCompile(`(\w+)=(\w+)`)
-	keysVars := r.FindAllStringSubmatch(value, -1)
-	if len(keysVars) == 0 {
-		return fmt.Errorf("expected KEY=VALUE got '%s'", value)
-	}
-
-	for _, kv := range keysVars {
-		(*m)[kv[1]] = kv[2]
-	}
-
-	return nil
-}
-
-func (m *KeyValValue) String() string {
-	return ""
-}
-
-func KeyVal(s kingpin.Settings) (target *map[string]string) {
-	target = &(map[string]string{})
-	s.SetValue((*KeyValValue)(target))
 	return
 }
