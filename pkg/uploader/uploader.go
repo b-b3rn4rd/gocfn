@@ -7,11 +7,11 @@ import (
 
 	"net/url"
 
-	"strings"
-
 	"sync/atomic"
 
 	"os"
+
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -180,7 +180,7 @@ func (u *Uploader) upload(filename *string, remotePath *string) (string, error) 
 	}
 
 	logrus.WithField("filename", *remotePath).WithField("uploadId", resp.UploadID).Debug(fmt.Sprintf("File has been uploaded"))
-	return resp.Location, nil
+	return u.MakeURL(remotePath), nil
 }
 
 func (u *Uploader) MakeURL(remotePath *string) string {
