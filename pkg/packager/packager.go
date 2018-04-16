@@ -26,7 +26,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/awslabs/goformation/cloudformation"
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
 	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
@@ -35,10 +34,17 @@ import (
 )
 
 type Packageriface interface {
-	Export(*command.PackageParams) (*Template, error)
+	Export(*PackageParams) (*Template, error)
 	WriteOutput(*string, []byte) error
 	Marshall(string, *Template) ([]byte, error)
 	Open(string) (*Template, error)
+}
+
+// PackageParams parameters required for package params
+type PackageParams struct {
+	S3Uploader         uploader.Uploaderiface
+	TemplateFile       string
+	OutputTemplateFile string
 }
 
 // Template struct
@@ -62,9 +68,8 @@ func New(logger *logrus.Logger, fs afero.Fs) *Packager {
 }
 
 // Export upload code for specific resources and modify template
-func (p *Packager) Export(packageParams *command.PackageParams) (*Template, error) {
-	template, err := p.Open(*packageParams.TemplateFile)
-
+func (p *Packager) Export(packageParams *PackageParams) (*Template, error) {
+	template, err := p.Open(packageParams.TemplateFile)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +86,6 @@ func (p *Packager) Export(packageParams *command.PackageParams) (*Template, erro
 			}
 
 			s3URL, err := p.exportAWSServerlessFunction(packageParams.S3Uploader, resource)
-
 			if err != nil {
 				return nil, errors.Wrap(err, "error while exporting code")
 			}
@@ -122,11 +126,11 @@ func (p *Packager) isZipFile(filepath string) bool {
 	p.logger.WithField("filepath", filepath).Debug("checking if file is zip")
 
 	f, err := p.fs.Open(filepath)
-	defer f.Close()
-
 	if err != nil {
 		return false
 	}
+
+	defer f.Close()
 
 	buffer := make([]byte, 512)
 	n, err := f.Read(buffer)
@@ -144,7 +148,6 @@ func (p *Packager) isS3URL(rawURL string) bool {
 	p.logger.WithField("url", rawURL).Debug("checking if file is s3 url")
 
 	url, err := url.Parse(rawURL)
-
 	if err != nil {
 		return false
 	}
@@ -165,7 +168,6 @@ func (p *Packager) Marshall(filename string, template *Template) ([]byte, error)
 		p.logger.WithField("filename", filename).Debug("file is json, converting to json")
 		raw, err = json.MarshalIndent(template, "", " ")
 	}
-
 	if err != nil {
 		return nil, err
 	}
@@ -179,12 +181,11 @@ func (p *Packager) Marshall(filename string, template *Template) ([]byte, error)
 }
 
 func (p *Packager) Open(filename string) (*Template, error) {
-	p.logger.WithField("templateFile", filename).Debug("opening gocfn template")
+	p.logger.WithField("templateFile", filename).Debug("opening cfn template")
 
 	data, err := ioutil.ReadFile(filename)
-
 	if err != nil {
-		return nil, errors.Wrap(err, "error while opening gocfn")
+		return nil, errors.Wrap(err, "error while opening cfn")
 	}
 
 	if p.isYAML(filename) {
@@ -198,7 +199,7 @@ func (p *Packager) Open(filename string) (*Template, error) {
 	template := &Template{}
 
 	if err := json.Unmarshal(data, template); err != nil {
-		return nil, errors.Wrap(err, "error while unmarshalling gocfn")
+		return nil, errors.Wrap(err, "error while unmarshalling cfn")
 	}
 
 	return template, nil

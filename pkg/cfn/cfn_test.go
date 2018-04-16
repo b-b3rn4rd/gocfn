@@ -1,4 +1,4 @@
-package main
+package cfn_test
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/cfn"
 	"github.com/b-b3rn4rd/gocfn/pkg/deployer"
 	"github.com/b-b3rn4rd/gocfn/pkg/packager"
 	"github.com/b-b3rn4rd/gocfn/pkg/streamer"
@@ -37,7 +37,7 @@ type mockerPackager struct {
 	marshallErr    error
 }
 
-func (p mockerPackager) Export(packageParams *command.PackageParams) (*packager.Template, error) {
+func (p mockerPackager) Export(packageParams *packager.PackageParams) (*packager.Template, error) {
 	return p.exportResp, p.exportErr
 }
 
@@ -78,7 +78,7 @@ func (s mockedDeployer) ExecuteChangeset(stackName *string, changeSetID *string)
 	return s.executeChangesetErr
 }
 
-func (s mockedDeployer) CreateChangeSet(deployParams *command.DeployParams) *deployer.ChangeSetRecord {
+func (s mockedDeployer) CreateChangeSet(deployParams *deployer.DeployParams) *deployer.ChangeSetRecord {
 	return &s.createChangeSetResp
 }
 
@@ -87,10 +87,6 @@ func (s mockedDeployer) DescribeStackUnsafe(stackName *string) *cloudformation.S
 }
 
 func TestDeploy(t *testing.T) {
-	exiter = func(code int) {
-
-	}
-
 	tests := map[string]struct {
 		// mocks
 		dplr  deployer.Deployeriface
@@ -308,23 +304,26 @@ func TestDeploy(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			stdOut := &bytes.Buffer{}
-			jsonOutWriter = writer.New(stdOut, writer.JSONFormatter)
-			strOutWriter = writer.New(stdOut, writer.JSONFormatter)
 
 			logger, hook := logrustest.NewNullLogger()
-			cfn := New(test.dplr, test.pckgr, test.strmr, logger)
-			cfn.deploy(&command.DeployParams{
+			cfn := cfn.NewWithOptions(
+				cfn.Deployer(test.dplr),
+				cfn.Packager(test.pckgr),
+				cfn.Streamer(test.strmr),
+				cfn.Logger(logger))
+
+			cfn.Deploy(&deployer.DeployParams{
 				test.s3Uploader,
-				test.stackName,
-				test.templateFile,
+				aws.StringValue(test.stackName),
+				aws.StringValue(test.templateFile),
 				test.parameters,
-				test.capabilities,
-				test.noExecuteChangeset,
-				test.roleArn,
-				test.notificationArns,
-				test.failOnEmptyChangeset,
+				aws.StringValueSlice(test.capabilities),
+				aws.BoolValue(test.noExecuteChangeset),
+				aws.StringValue(test.roleArn),
+				aws.StringValueSlice(test.notificationArns),
+				aws.BoolValue(test.failOnEmptyChangeset),
 				test.tags,
-				test.forceDeploy,
+				aws.BoolValue(test.forceDeploy),
 			},
 			)
 
@@ -339,7 +338,7 @@ func TestDeploy(t *testing.T) {
 
 func TestPackage(t *testing.T) {
 	tests := map[string]struct {
-		packageParams  *command.PackageParams
+		packageParams  *packager.PackageParams
 		exportResp     *packager.Template
 		exportErr      error
 		writeOutputErr error
@@ -348,8 +347,8 @@ func TestPackage(t *testing.T) {
 	}{
 		"exits with error with Export has error": {
 			exportErr: errors.New("error"),
-			packageParams: &command.PackageParams{
-				TemplateFile: aws.String("example.yml"),
+			packageParams: &packager.PackageParams{
+				TemplateFile: "example.yml",
 			},
 		},
 	}
@@ -361,8 +360,8 @@ func TestPackage(t *testing.T) {
 			}
 
 			logger, hook := logrustest.NewNullLogger()
-			cfn := New(nil, pkgr, nil, logger)
-			cfn.packaage(test.packageParams)
+			cfn := cfn.NewWithOptions(cfn.Logger(logger), cfn.Packager(pkgr))
+			cfn.Package(test.packageParams)
 
 			if hook.LastEntry() != nil {
 				assert.Equal(t, logrus.ErrorLevel, hook.LastEntry().Level)

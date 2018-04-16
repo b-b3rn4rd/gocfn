@@ -4,7 +4,13 @@ import (
 	"fmt"
 
 	"github.com/alecthomas/kingpin"
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
+	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/b-b3rn4rd/gocfn/pkg/cfn"
+	"github.com/b-b3rn4rd/gocfn/pkg/packager"
+	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
+	"github.com/spf13/afero"
 )
 
 var (
@@ -18,41 +24,49 @@ var (
 	packageKmsKeyID    = packageCommand.Flag("kms-key-id", "The ID of an AWS KMS key that the command uses to encrypt artifacts that are at rest in the S3 bucket.").String()
 )
 
-func (c *GoCfn) packaage(packageParams *command.PackageParams) {
-	template, err := c.pckgr.Export(packageParams)
+func packaage(sess client.ConfigProvider) {
 
+	s3Svc := s3.New(sess)
+
+	var s3Uploader uploader.Uploaderiface
+
+	cfn := cfn.New(sess, logger, *deployStream)
+
+	if *packageS3Bucket != "" {
+		uSvc := s3manager.NewUploaderWithClient(s3Svc)
+		s3Uploader = uploader.New(
+			s3Svc, uSvc,
+			logger,
+			packageS3Bucket,
+			packageS3Prefix,
+			packageKmsKeyID,
+			packageForceUpload,
+			afero.NewOsFs(),
+		)
+	}
+
+	body, err := cfn.Package(&packager.PackageParams{
+		S3Uploader:         s3Uploader,
+		TemplateFile:       *packageTemplateFile,
+		OutputTemplateFile: *packageOutputTemplateFile,
+	})
 	if err != nil {
-		c.logger.WithError(err).Error("error while exporting package")
+		logger.WithError(err).Error("error while running package command")
 		exiter(1)
 		return
 	}
 
-	raw, err := c.pckgr.Marshall(*packageParams.TemplateFile, template)
-
-	if err != nil {
-		c.logger.WithError(err).Error("error while marshalling template")
-		exiter(1)
-		return
-	}
-
-	if *packageParams.OutputTemplateFile == "" {
-		c.logger.Debug("output file is not specified, sending to stdout")
-		strOutWriter.Write(string(raw))
-		return
-	}
-
-	err = c.pckgr.WriteOutput(packageParams.OutputTemplateFile, raw)
-
-	if err != nil {
-		c.logger.WithError(err).Error("error while writing output")
-		exiter(1)
-		return
-	}
-
-	strOutWriter.Write(fmt.Sprintf(`
+	if body == "" {
+		strOutWriter.Write(fmt.Sprintf(`
 Successfully packaged artifacts and wrote output template to file %s"
 Execute the following command to deploy the packaged template"
-"gocfn deploy --template-file %s --name <YOUR STACK NAME>"`,
-		*packageParams.OutputTemplateFile, *packageParams.OutputTemplateFile),
-	)
+"cfn deploy --template-file %s --name <YOUR STACK NAME>"`,
+			*packageOutputTemplateFile, *packageOutputTemplateFile),
+		)
+
+		return
+	}
+
+	strOutWriter.Write(body)
+
 }

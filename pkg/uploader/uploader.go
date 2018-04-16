@@ -85,11 +85,11 @@ func New(svc s3iface.S3API, uSvc s3manageriface.UploaderAPI, logger *logrus.Logg
 func (u *Uploader) FileChecksum(filename *string) (string, error) {
 	f, err := u.appFs.Open(*filename)
 
-	defer f.Close()
-
 	if err != nil {
 		return "", errors.Wrap(err, "Error while opening file")
 	}
+
+	defer f.Close()
 
 	h := md5.New()
 

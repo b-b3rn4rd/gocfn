@@ -19,14 +19,29 @@ import (
 	"os"
 	"sync"
 
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
 )
+
+// DeployParams parameters required for deploy command
+type DeployParams struct {
+	S3Uploader           uploader.Uploaderiface
+	StackName            string
+	TemplateFile         string
+	Parameters           []*cloudformation.Parameter
+	Capabilities         []string
+	NoExecuteChangeset   bool
+	RoleArn              string
+	NotificationArns     []string
+	FailOnEmptyChangeset bool
+	Tags                 []*cloudformation.Tag
+	ForceDeploy          bool
+}
 
 type Deployeriface interface {
 	WaitForChangeSet(*string, *string) *ChangeSetRecord
 	WaitForExecute(*string, *ChangeSetRecord, streamer.Streameriface) *StackRecord
 	ExecuteChangeset(*string, *string) error
-	CreateChangeSet(deployParams *command.DeployParams) *ChangeSetRecord
+	CreateChangeSet(deployParams *DeployParams) *ChangeSetRecord
 	DescribeStackUnsafe(stackName *string) *cloudformation.Stack
 }
 
@@ -52,7 +67,7 @@ func New(svc cloudformationiface.CloudFormationAPI, logger *logrus.Logger) *Depl
 	return &Deployer{
 		svc:             svc,
 		logger:          logger,
-		changesetPrefix: "gocfn-cloudformation-package-deploy",
+		changesetPrefix: "cfn-cloudformation-package-deploy",
 	}
 }
 
@@ -89,39 +104,37 @@ func (s *Deployer) hasStack(stackName *string) (bool, *cloudformation.Stack, err
 	return true, resp.Stacks[0], nil
 }
 
-func (s *Deployer) createChangeSet(deployParams *command.DeployParams) (res *ChangeSetRecord) {
+func (s *Deployer) createChangeSet(deployParams *DeployParams) (res *ChangeSetRecord) {
 
 	res = &ChangeSetRecord{
 		ChangeSet: &cloudformation.DescribeChangeSetOutput{},
 	}
 
 	changesetName := fmt.Sprintf("%s-%s", s.changesetPrefix, strconv.FormatInt(time.Now().Unix(), 10))
-	description := fmt.Sprintf("Created by gocfn at %s", time.Now().UTC().String())
+	description := fmt.Sprintf("Created by cfn at %s", time.Now().UTC().String())
 
 	changeSetInput := &cloudformation.CreateChangeSetInput{
 		ChangeSetName: aws.String(changesetName),
-		StackName:     deployParams.StackName,
+		StackName:     aws.String(deployParams.StackName),
 		ChangeSetType: aws.String(cloudformation.ChangeSetTypeCreate),
 		Tags:          deployParams.Tags,
-		Capabilities:  deployParams.Capabilities,
+		Capabilities:  aws.StringSlice(deployParams.Capabilities),
 		Description:   aws.String(description),
 	}
 
-	hasStack, stack, err := s.hasStack(deployParams.StackName)
-
+	hasStack, stack, err := s.hasStack(aws.String(deployParams.StackName))
 	if err != nil {
 		res.Err = err
 		return
 	}
 
 	if hasStack && s.hasFailedCreation(stack.StackStatus) {
-		if !*deployParams.ForceDeploy {
+		if !deployParams.ForceDeploy {
 			res.Err = fmt.Errorf("stack is in %s and can't be updated, unless --force is specified", *stack.StackStatus)
 			return
 		}
 
-		err := s.deleteStack(deployParams.StackName)
-
+		err := s.deleteStack(aws.String(deployParams.StackName))
 		if err != nil {
 			res.Err = errors.Wrap(err, "Error while running DeleteStack")
 			return
@@ -138,30 +151,30 @@ func (s *Deployer) createChangeSet(deployParams *command.DeployParams) (res *Cha
 	changeSetInput.Parameters = deployParams.Parameters
 
 	if deployParams.S3Uploader != nil {
-		s.logger.WithField("stackName", *deployParams.StackName).Debug("Bucket is specified trying to upload the template")
-		templateURL, err := deployParams.S3Uploader.UploadWithDedup(deployParams.TemplateFile, "template")
+		s.logger.WithField("stackName", aws.String(deployParams.StackName)).Debug("Bucket is specified trying to upload the template")
+		templateURL, err := deployParams.S3Uploader.UploadWithDedup(&deployParams.TemplateFile, "template")
 
 		if err != nil {
 			res.Err = err
 			return
 		}
 
-		s.logger.WithField("stackName", *deployParams.StackName).WithField("templateURL", templateURL).Debug("Stack is going to be created from s3 bucket")
+		s.logger.WithField("stackName", aws.String(deployParams.StackName)).WithField("templateURL", templateURL).Debug("Stack is going to be created from s3 bucket")
 		changeSetInput.TemplateURL = aws.String(templateURL)
 	} else {
-		raw, _ := ioutil.ReadFile(*deployParams.TemplateFile)
+		raw, _ := ioutil.ReadFile(deployParams.TemplateFile)
 		changeSetInput.TemplateBody = aws.String(string(raw))
 	}
 
 	if len(deployParams.NotificationArns) != 0 {
-		changeSetInput.NotificationARNs = deployParams.NotificationArns
+		changeSetInput.NotificationARNs = aws.StringSlice(deployParams.NotificationArns)
 	}
 
-	if *deployParams.RoleArn != "" {
-		changeSetInput.RoleARN = deployParams.RoleArn
+	if deployParams.RoleArn != "" {
+		changeSetInput.RoleARN = aws.String(deployParams.RoleArn)
 	}
 
-	s.logger.WithField("stackName", *deployParams.StackName).Debug("Running CreateChangeSet")
+	s.logger.WithField("stackName", aws.String(deployParams.StackName)).Debug("Running CreateChangeSet")
 	resp, err := s.svc.CreateChangeSet(changeSetInput)
 
 	if err != nil {
@@ -304,7 +317,7 @@ func (s *Deployer) ExecuteChangeset(stackName *string, changeSetID *string) erro
 	return nil
 }
 
-func (s *Deployer) CreateChangeSet(deployParams *command.DeployParams) *ChangeSetRecord {
+func (s *Deployer) CreateChangeSet(deployParams *DeployParams) *ChangeSetRecord {
 	return s.createChangeSet(deployParams)
 }
 
@@ -319,7 +332,6 @@ func (s *Deployer) deleteStack(stackName *string) error {
 	_, err := s.svc.DeleteStack(&cloudformation.DeleteStackInput{
 		StackName: stackName,
 	})
-
 	if err != nil {
 		return err
 	}

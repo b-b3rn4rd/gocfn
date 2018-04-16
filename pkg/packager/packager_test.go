@@ -3,8 +3,6 @@ package packager_test
 import (
 	"testing"
 
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
-
 	"io/ioutil"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -35,7 +33,7 @@ func (u *mockedS3Uploader) URLTos3Path(url string) (string, error) {
 
 func TestExport(t *testing.T) {
 	tests := map[string]struct {
-		packageParams       *command.PackageParams
+		packageParams       *packager.PackageParams
 		exportResp          *packager.Template
 		exportErr           error
 		uploadWithDedupResp string
@@ -44,8 +42,8 @@ func TestExport(t *testing.T) {
 		urlTos3PathErr      error
 	}{
 		"export uploads local file to s3 and modify CodeUri": {
-			packageParams: &command.PackageParams{
-				TemplateFile: aws.String("testdata/stack_with_local_file.yml"),
+			packageParams: &packager.PackageParams{
+				TemplateFile: "testdata/stack_with_local_file.yml",
 			},
 			uploadWithDedupResp: "http://example.com/hello/abc.zip",
 			urlTos3PathResp:     "s3://hello/abc.zip",
@@ -62,8 +60,8 @@ func TestExport(t *testing.T) {
 			}(),
 		},
 		"export dont upload if file is already s3 url": {
-			packageParams: &command.PackageParams{
-				TemplateFile: aws.String("testdata/stack_with_s3_url.yml"),
+			packageParams: &packager.PackageParams{
+				TemplateFile: "testdata/stack_with_s3_url.yml",
 			},
 			uploadWithDedupResp: "not called",
 			urlTos3PathResp:     "not called",
@@ -76,8 +74,8 @@ func TestExport(t *testing.T) {
 			}(),
 		},
 		"export dont upload codeUri is not string": {
-			packageParams: &command.PackageParams{
-				TemplateFile: aws.String("testdata/stack_invalid.yml"),
+			packageParams: &packager.PackageParams{
+				TemplateFile: "testdata/stack_invalid.yml",
 			},
 			uploadWithDedupResp: "not called",
 			urlTos3PathResp:     "not called",
@@ -91,15 +89,15 @@ func TestExport(t *testing.T) {
 			}(),
 		},
 		"export returns error if upload failed": {
-			packageParams: &command.PackageParams{
-				TemplateFile: aws.String("testdata/stack_with_local_file.yml"),
+			packageParams: &packager.PackageParams{
+				TemplateFile: "testdata/stack_with_local_file.yml",
 			},
 			uploadWithDedupErr: errors.New("error"),
 			exportErr:          errors.New("error while exporting code: error while uploading code: error"),
 		},
 		"export upload already zipped file": {
-			packageParams: &command.PackageParams{
-				TemplateFile: aws.String("testdata/stack_with_zip.yml"),
+			packageParams: &packager.PackageParams{
+				TemplateFile: "testdata/stack_with_zip.yml",
 			},
 			uploadWithDedupResp: "http://example.com/hello/zipped.zip",
 			urlTos3PathResp:     "s3://hello/zipped.zip",

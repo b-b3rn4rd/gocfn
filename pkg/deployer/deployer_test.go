@@ -7,7 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/cloudformation/cloudformationiface"
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
 	"github.com/b-b3rn4rd/gocfn/pkg/deployer"
 	"github.com/b-b3rn4rd/gocfn/pkg/streamer"
 	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
@@ -230,16 +229,16 @@ func TestCreateChangeSet(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			d := deployer.New(svc, logrus.New())
-			resp := d.CreateChangeSet(&command.DeployParams{
-				StackName:          test.stackName,
-				TemplateFile:       test.templateFile,
+			resp := d.CreateChangeSet(&deployer.DeployParams{
+				StackName:          aws.StringValue(test.stackName),
+				TemplateFile:       aws.StringValue(test.templateFile),
 				Parameters:         test.parameters,
-				Capabilities:       test.capabilities,
-				NoExecuteChangeset: test.noExecuteChangeset,
-				RoleArn:            test.roleArn,
-				NotificationArns:   test.notificationArns,
+				Capabilities:       aws.StringValueSlice(test.capabilities),
+				NoExecuteChangeset: aws.BoolValue(test.noExecuteChangeset),
+				RoleArn:            aws.StringValue(test.roleArn),
+				NotificationArns:   aws.StringValueSlice(test.notificationArns),
 				Tags:               test.tags,
-				ForceDeploy:        test.forceDeploy,
+				ForceDeploy:        aws.BoolValue(test.forceDeploy),
 				S3Uploader:         test.s3Uploader,
 			},
 			)

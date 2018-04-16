@@ -1,11 +1,17 @@
 package main
 
 import (
-	"strings"
-
 	"github.com/alecthomas/kingpin"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/b-b3rn4rd/gocfn/pkg/cfn"
 	"github.com/b-b3rn4rd/gocfn/pkg/cli"
-	"github.com/b-b3rn4rd/gocfn/pkg/command"
+	"github.com/b-b3rn4rd/gocfn/pkg/deployer"
+	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
+	"github.com/spf13/afero"
 )
 
 var (
@@ -27,64 +33,48 @@ var (
 	deployStream               = deployCommand.Flag("stream", "Stream stack events during creation or update process.").Bool()
 )
 
-func (c *GoCfn) deploy(deployParams *command.DeployParams) {
+func deploy(sess client.ConfigProvider) {
+	s3Svc := s3.New(sess)
 
-	changeSet := c.dplr.CreateChangeSet(deployParams)
+	var s3Uploader uploader.Uploaderiface
 
-	if changeSet.Err != nil {
-		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
-		exiter(1)
-		return
+	cfn := cfn.New(sess, logger, *deployStream)
+
+	if *deployS3Bucket != "" {
+		uSvc := s3manager.NewUploaderWithClient(s3Svc)
+		s3Uploader = uploader.New(
+			s3Svc,
+			uSvc,
+			logger,
+			deployS3Bucket,
+			deployS3Prefix,
+			deployKmsKeyID,
+			deployForceUpload,
+			afero.NewOsFs(),
+		)
 	}
 
-	changeSetResult := c.dplr.WaitForChangeSet(deployParams.StackName, changeSet.ChangeSet.ChangeSetId)
-	changeSet.ChangeSet = changeSetResult.ChangeSet
-	changeSet.Err = changeSetResult.Err
-
-	if changeSet.Err != nil {
-		isEmptyChangeSet := strings.Contains(changeSet.Err.Error(), "The submitted information didn't contain changes.")
-
-		if !*deployParams.FailOnEmptyChangeset && isEmptyChangeSet {
-			jsonOutWriter.Write(c.dplr.DescribeStackUnsafe(deployParams.StackName))
-			return
-		}
-
-		c.logger.WithError(changeSet.Err).Error("ChangeSet creation error")
-		exiter(1)
-		return
-	}
-
-	if *deployParams.NoExecuteChangeset {
-		jsonOutWriter.Write(changeSet.ChangeSet)
-		return
-	}
-
-	if c.stmr != nil {
-		seenStackEvents := c.stmr.DescribeStackEvents(deployParams.StackName, nil)
-		if seenStackEvents.Err != nil {
-			c.logger.WithError(seenStackEvents.Err).Error("Error while gathering stack events")
-			exiter(1)
-			return
-		}
-
-		changeSet.StackEvents = seenStackEvents.Records
-	}
-
-	err := c.dplr.ExecuteChangeset(deployParams.StackName, changeSet.ChangeSet.ChangeSetId)
-
+	body, err := cfn.Deploy(&deployer.DeployParams{
+		S3Uploader:           s3Uploader,
+		StackName:            aws.StringValue(deployStackName),
+		TemplateFile:         aws.StringValue(deployTemplateFile),
+		Parameters:           *deployParameterOverrides,
+		Capabilities:         *deployCapabilities,
+		NoExecuteChangeset:   aws.BoolValue(deployNoExecuteChangeset),
+		RoleArn:              aws.StringValue(deployRoleArn),
+		NotificationArns:     *deployNotificationArns,
+		FailOnEmptyChangeset: aws.BoolValue(deployFailOnEmptyChangeset),
+		Tags:                 *deployTags,
+		ForceDeploy:          aws.BoolValue(deployForceDeploy),
+	})
 	if err != nil {
-		c.logger.WithError(err).Error("ChangeSet execution error")
+		logger.WithError(err).Error("error while running deploy command")
 		exiter(1)
 		return
 	}
 
-	res := c.dplr.WaitForExecute(deployParams.StackName, changeSet, c.stmr)
-
-	if res.Err != nil {
-		c.logger.WithError(res.Err).Error("ChangeSet execution error")
-		exiter(1)
-		return
+	switch body.(type) {
+	case *cloudformation.Stack, *cloudformation.DescribeChangeSetOutput:
+		jsonOutWriter.Write(body)
 	}
-
-	jsonOutWriter.Write(res.Stack)
 }
