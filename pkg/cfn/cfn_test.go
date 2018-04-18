@@ -1,8 +1,6 @@
 package cfn_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -14,7 +12,6 @@ import (
 	"github.com/b-b3rn4rd/gocfn/pkg/uploader"
 	"github.com/b-b3rn4rd/gocfn/pkg/writer"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	logrustest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 )
@@ -107,7 +104,8 @@ func TestDeploy(t *testing.T) {
 		forceDeploy          *bool
 
 		// output
-		stdOut string
+		expectedResp interface{}
+		expectedErr  error
 	}{
 		"deploy calls fatal error if CreateChangeSet produced an error": {
 			dplr: mockedDeployer{
@@ -115,6 +113,8 @@ func TestDeploy(t *testing.T) {
 					Err: errors.New("error"),
 				},
 			},
+			expectedResp: "",
+			expectedErr:  errors.New("error"),
 		},
 		"deploy calls fatal error if WaitForChangeSet produced an error and its not empty stack": {
 			failOnEmptyChangeset: aws.Bool(false),
@@ -132,6 +132,8 @@ func TestDeploy(t *testing.T) {
 					},
 				},
 			},
+			expectedResp: "",
+			expectedErr:  errors.New("error"),
 		},
 		"deploy returns stack information if WaitForChangeSet reports empty changeset": {
 			failOnEmptyChangeset: aws.Bool(false),
@@ -152,14 +154,9 @@ func TestDeploy(t *testing.T) {
 					StackId: aws.String("hello"),
 				},
 			},
-			stdOut: func() string {
-				s := cloudformation.Stack{
-					StackId: aws.String("hello"),
-				}
-				raw, _ := json.MarshalIndent(s, "", "    ")
-
-				return string(raw) + "\n"
-			}(),
+			expectedResp: &cloudformation.Stack{
+				StackId: aws.String("hello"),
+			},
 		},
 		"deploy calls fatal error if WaitForChangeSet reports and changeset and failOnEmptyChangeset": {
 			failOnEmptyChangeset: aws.Bool(true),
@@ -177,6 +174,8 @@ func TestDeploy(t *testing.T) {
 					},
 				},
 			},
+			expectedResp: "",
+			expectedErr:  errors.New("error"),
 		},
 		"deploy returns changeSet if noExecuteChangeset is given": {
 			failOnEmptyChangeset: aws.Bool(false),
@@ -195,15 +194,10 @@ func TestDeploy(t *testing.T) {
 					},
 				},
 			},
-			stdOut: func() string {
-				s := cloudformation.DescribeChangeSetOutput{
-					StackId:     aws.String("hello"),
-					ChangeSetId: aws.String("1"),
-				}
-				raw, _ := json.MarshalIndent(s, "", "    ")
-
-				return string(raw) + "\n"
-			}(),
+			expectedResp: &cloudformation.DescribeChangeSetOutput{
+				StackId:     aws.String("hello"),
+				ChangeSetId: aws.String("1"),
+			},
 		},
 		"deploy calls fatal error if ExecuteChangeset return an error": {
 			failOnEmptyChangeset: aws.Bool(false),
@@ -222,6 +216,8 @@ func TestDeploy(t *testing.T) {
 				},
 				executeChangesetErr: errors.New("some error"),
 			},
+			expectedResp: "",
+			expectedErr:  errors.New("some error"),
 		},
 		"deploy calls fatal error if DescribeStackEvents return an error": {
 			failOnEmptyChangeset: aws.Bool(false),
@@ -244,6 +240,8 @@ func TestDeploy(t *testing.T) {
 					Err: errors.New("error"),
 				},
 			},
+			expectedResp: "",
+			expectedErr:  errors.New("error"),
 		},
 		"deploy calls fatal error if WaitForExecute return an error": {
 			failOnEmptyChangeset: aws.Bool(false),
@@ -264,6 +262,8 @@ func TestDeploy(t *testing.T) {
 					Err: errors.New("me here"),
 				},
 			},
+			expectedResp: "",
+			expectedErr:  errors.New("me here"),
 		},
 
 		"deploy write stack output to stdout": {
@@ -289,30 +289,23 @@ func TestDeploy(t *testing.T) {
 				},
 			},
 
-			stdOut: func() string {
-				s := cloudformation.Stack{
-					StackId:     aws.String("hello"),
-					StackStatus: aws.String(cloudformation.StackStatusCreateComplete),
-				}
-				raw, _ := json.MarshalIndent(s, "", "    ")
-
-				return string(raw) + "\n"
-			}(),
+			expectedResp: &cloudformation.Stack{
+				StackId:     aws.String("hello"),
+				StackStatus: aws.String(cloudformation.StackStatusCreateComplete),
+			},
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			stdOut := &bytes.Buffer{}
-
-			logger, hook := logrustest.NewNullLogger()
+			logger, _ := logrustest.NewNullLogger()
 			cfn := cfn.NewWithOptions(
 				cfn.Deployer(test.dplr),
 				cfn.Packager(test.pckgr),
 				cfn.Streamer(test.strmr),
 				cfn.Logger(logger))
 
-			cfn.Deploy(&deployer.DeployParams{
+			body, err := cfn.Deploy(&deployer.DeployParams{
 				test.s3Uploader,
 				aws.StringValue(test.stackName),
 				aws.StringValue(test.templateFile),
@@ -327,11 +320,12 @@ func TestDeploy(t *testing.T) {
 			},
 			)
 
-			if hook.LastEntry() != nil {
-				assert.Equal(t, logrus.ErrorLevel, hook.LastEntry().Level)
+			if err != nil {
+
+				assert.Error(t, test.expectedErr, err.Error())
 			}
 
-			assert.Equal(t, test.stdOut, stdOut.String())
+			assert.Equal(t, test.expectedResp, body)
 		})
 	}
 }
@@ -359,12 +353,12 @@ func TestPackage(t *testing.T) {
 				exportErr: test.exportErr,
 			}
 
-			logger, hook := logrustest.NewNullLogger()
+			logger, _ := logrustest.NewNullLogger()
 			cfn := cfn.NewWithOptions(cfn.Logger(logger), cfn.Packager(pkgr))
-			cfn.Package(test.packageParams)
+			_, err := cfn.Package(test.packageParams)
 
-			if hook.LastEntry() != nil {
-				assert.Equal(t, logrus.ErrorLevel, hook.LastEntry().Level)
+			if err != nil {
+				assert.Error(t, test.exportErr, err)
 			}
 		})
 	}

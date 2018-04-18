@@ -114,20 +114,17 @@ func (c *Cfn) Deploy(deployParams *deployer.DeployParams) (interface{}, error) {
 		seenStackEvents := c.stmr.DescribeStackEvents(aws.String(deployParams.StackName), nil)
 		if seenStackEvents.Err != nil {
 			return "", errors.Wrap(seenStackEvents.Err, "error while gathering stack events")
-
 		}
 
 		changeSet.StackEvents = seenStackEvents.Records
 	}
 
 	err := c.dplr.ExecuteChangeset(aws.String(deployParams.StackName), changeSet.ChangeSet.ChangeSetId)
-
 	if err != nil {
 		return "", errors.Wrap(err, "changeSet execution error")
 	}
 
 	res := c.dplr.WaitForExecute(aws.String(deployParams.StackName), changeSet, c.stmr)
-
 	if res.Err != nil {
 		return "", errors.Wrap(res.Err, "changeSet execution error")
 	}
@@ -137,7 +134,6 @@ func (c *Cfn) Deploy(deployParams *deployer.DeployParams) (interface{}, error) {
 
 func (c *Cfn) Package(packageParams *packager.PackageParams) (string, error) {
 	template, err := c.pckgr.Export(packageParams)
-
 	if err != nil {
 		return "", errors.Wrap(err, "error while exporting package")
 	}

@@ -92,7 +92,7 @@ func TestUploader(t *testing.T) {
 				},
 				err: nil,
 			},
-			Res: filename,
+			Res: url,
 			Err: nil,
 		},
 		"Existing object without force is not uploaded": {
@@ -115,7 +115,7 @@ func TestUploader(t *testing.T) {
 				},
 				err: nil,
 			},
-			Res: filename,
+			Res: url,
 			Err: nil,
 		},
 	}
@@ -128,8 +128,12 @@ func TestUploader(t *testing.T) {
 			upldr := uploader.New(test.Svc, test.Usvc, logrus.New(), bucket, prefix, kmsKeyId, forceUpload, fs)
 
 			resp, err := upldr.UploadWithDedup(&filename, ext)
-			assert.Equal(t, resp, test.Res)
-			assert.Equal(t, err, test.Err)
+			assert.Equal(t, test.Res, resp)
+
+			if err != nil {
+				assert.Equal(t, test.Err, err.Error())
+			}
+
 		})
 	}
 
