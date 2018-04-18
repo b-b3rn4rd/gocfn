@@ -306,17 +306,17 @@ func TestDeploy(t *testing.T) {
 				cfn.Logger(logger))
 
 			body, err := cfn.Deploy(&deployer.DeployParams{
-				test.s3Uploader,
-				aws.StringValue(test.stackName),
-				aws.StringValue(test.templateFile),
-				test.parameters,
-				aws.StringValueSlice(test.capabilities),
-				aws.BoolValue(test.noExecuteChangeset),
-				aws.StringValue(test.roleArn),
-				aws.StringValueSlice(test.notificationArns),
-				aws.BoolValue(test.failOnEmptyChangeset),
-				test.tags,
-				aws.BoolValue(test.forceDeploy),
+				S3Uploader:           test.s3Uploader,
+				StackName:            aws.StringValue(test.stackName),
+				TemplateFile:         aws.StringValue(test.templateFile),
+				Parameters:           test.parameters,
+				Capabilities:         aws.StringValueSlice(test.capabilities),
+				NoExecuteChangeset:   aws.BoolValue(test.noExecuteChangeset),
+				RoleArn:              aws.StringValue(test.roleArn),
+				NotificationArns:     aws.StringValueSlice(test.notificationArns),
+				FailOnEmptyChangeset: aws.BoolValue(test.failOnEmptyChangeset),
+				Tags:                 test.tags,
+				ForceDeploy:          aws.BoolValue(test.forceDeploy),
 			},
 			)
 
