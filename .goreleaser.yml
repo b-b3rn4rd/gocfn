@@ -12,3 +12,8 @@ brew:
     owner: b-b3rn4rd
     name: homebrew-tap
   folder: Formula
+dockers:
+- image: b-b3rn4rd/gocfn
+  tag_templates:
+    - '{{ .Tag }}'
+    - latest
