@@ -74,10 +74,9 @@ func (p *Packager) Export(packageParams *PackageParams) (*Template, error) {
 		return nil, err
 	}
 
-	for resourceID, raw := range template.Resources {
-		untyped := raw.(map[string]interface{})
+	for resourceID, resourceType := range template.Resources {
 
-		switch untyped["Type"] {
+		switch resourceType.AWSCloudFormationType() {
 		case "AWS::Serverless::Function":
 			resource, err := template.GetAWSServerlessFunctionWithName(resourceID)
 
@@ -85,7 +84,7 @@ func (p *Packager) Export(packageParams *PackageParams) (*Template, error) {
 				return nil, errors.Wrap(err, "error while searching for serverless func")
 			}
 
-			s3URL, err := p.exportAWSServerlessFunction(packageParams.S3Uploader, resource)
+			s3URL, err := p.exportAWSServerlessFunction(packageParams.S3Uploader, *resource)
 			if err != nil {
 				return nil, errors.Wrap(err, "error while exporting code")
 			}
@@ -93,7 +92,7 @@ func (p *Packager) Export(packageParams *PackageParams) (*Template, error) {
 			if s3URL != "" {
 				p.logger.WithField("s3URL", s3URL).Debug("new code URL")
 				resource.CodeUri.String = aws.String(s3URL)
-				template.Resources[resourceID] = &resource
+				template.Resources[resourceID] = resource
 			}
 		}
 	}
